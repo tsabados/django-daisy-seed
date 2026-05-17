@@ -92,6 +92,7 @@ class Media(models.Model):
         choices=SourceType.choices,
         default=SourceType.UPLOADED,
     )
+    visual_analysis = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

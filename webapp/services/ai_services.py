@@ -277,13 +277,24 @@ def analyze_media_visuals(media_list):
     """Run OpenAI Vision visual analysis on a list of Media objects.
 
     Returns a normalized visual analysis dict suitable for use in video prompts.
+    Caches the result on each Media object's visual_analysis field.
     """
     import json
+    from pydantic import ValidationError
     from services.video_service import VISUAL_ANALYSIS_IMAGE_LIMIT, VISUAL_ANALYSIS_PROMPT, _image_data_url
 
     images = list(media_list)[:VISUAL_ANALYSIS_IMAGE_LIMIT]
     if not images:
         return {}
+
+    # Check cache on the first image — it represents the group analysis.
+    cached = images[0].visual_analysis
+    if cached:
+        try:
+            validated = _VisualAnalysisResult.model_validate(cached)
+            return validated.model_dump()
+        except ValidationError:
+            pass  # Cache is stale or invalid — fall through to LLM.
 
     group = images[0].media_group
     group_json = json.dumps({
@@ -316,7 +327,14 @@ def analyze_media_visuals(media_list):
         messages=[{'role': 'user', 'content': content}],
         text_format=_VisualAnalysisResult,
     )
-    return result.model_dump()
+    result_dict = result.model_dump()
+
+    # Save to all images in the list so any of them can serve as cache hit.
+    ids = [img.pk for img in images]
+    from media_library.models import Media as _Media
+    _Media.objects.filter(pk__in=ids).update(visual_analysis=result_dict)
+
+    return result_dict
 
 
 def _generate_gemini_media(prompt, input_media=None):
