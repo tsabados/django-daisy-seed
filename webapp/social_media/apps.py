@@ -26,7 +26,7 @@ def _setup_schedule(sender, **kwargs):
             func='social_media.tasks.autopost_all_projects_task',
             defaults={
                 'schedule_type': Schedule.CRON,
-                'cron': '0 9 * * *',
+                'cron': '0 10 * * *',
                 'repeats': -1,
                 'name': 'Autopost for all projects',
             },

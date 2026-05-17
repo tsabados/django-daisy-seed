@@ -111,4 +111,4 @@ jobs:
             # Pull latest images and (re)start services
             cd deploy
             docker compose up -d
-            docker compose up -d --force-recreate stryng_app qcluster
+            docker compose up -d --build --force-recreate stryng_app qcluster
