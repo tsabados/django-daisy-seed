@@ -257,29 +257,41 @@ def suggest_topic(brand, seed_media):
     return topics if topics else [raw]
 
 
+class _VisualAnalysisResult(PydanticBaseModel):
+    product_identity_summary: str
+    visible_attributes: list[str]
+    colors: list[str]
+    materials_textures: list[str]
+    shape_silhouette: str
+    logos_labels_text: list[str]
+    view_specific_details: list[str]
+    mutually_exclusive_details: list[str]
+    view_separation_rules: list[str]
+    scale_fit_usage: list[str]
+    styling_context: list[str]
+    product_fidelity_rules: list[str]
+    avoid_assumptions: list[str]
+
+
 def analyze_media_visuals(media_list):
     """Run OpenAI Vision visual analysis on a list of Media objects.
 
     Returns a normalized visual analysis dict suitable for use in video prompts.
     """
-    from services.video_service import (
-        VISUAL_ANALYSIS_IMAGE_LIMIT,
-        VISUAL_ANALYSIS_PROMPT,
-        _call_vision_json,
-        normalize_visual_analysis_response,
-    )
+    import json
+    from services.video_service import VISUAL_ANALYSIS_IMAGE_LIMIT, VISUAL_ANALYSIS_PROMPT, _image_data_url
 
     images = list(media_list)[:VISUAL_ANALYSIS_IMAGE_LIMIT]
     if not images:
         return {}
 
     group = images[0].media_group
-    group_json = __import__('json').dumps({
+    group_json = json.dumps({
         'id': group.id,
         'title': group.title,
         'description': group.description,
     }, indent=2)
-    reference_images_json = __import__('json').dumps([
+    reference_images_json = json.dumps([
         {
             'id': m.id,
             'source': m.external_url or (m.file.name if m.file else ''),
@@ -290,8 +302,21 @@ def analyze_media_visuals(media_list):
         group_json=group_json,
         reference_images_json=reference_images_json,
     )
-    raw = _call_vision_json(prompt, images)
-    return normalize_visual_analysis_response(raw)
+
+    content = [{'type': 'input_text', 'text': prompt}]
+    for image in images:
+        try:
+            data_url = _image_data_url(image)
+        except Exception:
+            continue
+        if data_url:
+            content.append({'type': 'input_image', 'image_url': data_url})
+
+    result = _openai_chat(
+        messages=[{'role': 'user', 'content': content}],
+        text_format=_VisualAnalysisResult,
+    )
+    return result.model_dump()
 
 
 def _generate_gemini_media(prompt, input_media=None):

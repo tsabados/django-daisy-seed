@@ -20,6 +20,8 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 
 from media_library.models import Media, MediaGroup
+from pydantic import BaseModel as PydanticBaseModel, field_validator, model_validator
+
 from services.ai_services import (
     OpenAIModel,
     _build_media_descriptions,
@@ -551,71 +553,10 @@ def _image_data_url(image):
     return f'data:{mime_type};base64,{encoded}'
 
 
-def _call_vision_json(prompt, images, model=OpenAIModel.QUICK):
-    """Call OpenAI with vision content (images encoded as data URLs) and parse as JSON."""
-    content = [{'type': 'input_text', 'text': prompt}]
-    attached_count = 0
-    for image in images[:VISUAL_ANALYSIS_IMAGE_LIMIT]:
-        try:
-            data_url = _image_data_url(image)
-        except Exception:
-            continue
-        if data_url:
-            content.append({'type': 'input_image', 'image_url': image.url})
-            attached_count += 1
-    if attached_count == 0:
-        raise VideoServiceError('Visual analysis requires at least one loadable reference image.')
-
-    raw = ''
-    for attempt_content in [
-        content,
-        [{'type': 'input_text', 'text': f'{prompt}\n\nReturn only one valid JSON object. Do not use markdown fences or commentary.'}] + content[1:],
-        [{'type': 'input_text', 'text': f'{prompt}\n\nThe previous response was blank. You must return exactly one non-empty JSON object only.'}] + content[1:],
-    ]:
-        raw = _openai_chat(
-            messages=[{'role': 'user', 'content': attempt_content}],
-            model=model,
-            text={"verbosity": "low"}
-        )
-        if str(raw or '').strip():
-            break
-
-    if not str(raw or '').strip():
-        raw_fallback = _call_json(
-            f'{prompt}\n\n'
-            'The image-enabled response returned blank. Fall back to the provided product/reference group '
-            'metadata and reference image metadata. Return exactly one non-empty JSON object only.',
-            model=model,
-            text={"verbosity": "low"} 
-        )
-        return raw_fallback
-    return _parse_json_response(raw, error_prefix='AI returned invalid visual analysis JSON')
-
-
 def _normalize_optional_string_list(value):
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
-
-
-def normalize_visual_analysis_response(response):
-    if not isinstance(response, dict):
-        response = {}
-    return {
-        'product_identity_summary': _stringify_value(response.get('product_identity_summary', '')),
-        'visible_attributes': _normalize_optional_string_list(response.get('visible_attributes')),
-        'colors': _normalize_optional_string_list(response.get('colors')),
-        'materials_textures': _normalize_optional_string_list(response.get('materials_textures')),
-        'shape_silhouette': _stringify_value(response.get('shape_silhouette', '')),
-        'logos_labels_text': _normalize_optional_string_list(response.get('logos_labels_text')),
-        'view_specific_details': _normalize_optional_string_list(response.get('view_specific_details')),
-        'mutually_exclusive_details': _normalize_optional_string_list(response.get('mutually_exclusive_details')),
-        'view_separation_rules': _normalize_optional_string_list(response.get('view_separation_rules')),
-        'scale_fit_usage': _normalize_optional_string_list(response.get('scale_fit_usage')),
-        'styling_context': _normalize_optional_string_list(response.get('styling_context')),
-        'product_fidelity_rules': _normalize_optional_string_list(response.get('product_fidelity_rules')),
-        'avoid_assumptions': _normalize_optional_string_list(response.get('avoid_assumptions')),
-    }
 
 
 def image_reference_summary(image):
@@ -673,37 +614,6 @@ def build_script_prompt(briefs_payload, brief):
         metadata_json=json.dumps(briefs_payload.get('metadata', {}), indent=2),
         brief_json=json.dumps(brief, indent=2),
     )
-
-
-def normalize_briefs_response(response, video_type=None):
-    if video_type is not None:
-        validate_video_type(video_type)
-    briefs = response.get('briefs') if isinstance(response, dict) else None
-    if not isinstance(briefs, list) or len(briefs) != BRIEF_COUNT:
-        raise VideoServiceError(f'Expected exactly {BRIEF_COUNT} briefs.')
-    required = (
-        'id', 'title', 'hook', 'target_viewer', 'core_message', 'story_angle',
-        'proof_mechanism', 'viewer_tension', 'product_role', 'visual_hook',
-        'visual_direction', 'cta', 'why_it_fits_type', 'avoid_cliches',
-    )
-    normalized = []
-    seen_ids = set()
-    for expected_id, brief in enumerate(briefs, 1):
-        if not isinstance(brief, dict):
-            raise VideoServiceError('Each brief must be an object.')
-        brief_id = int(brief.get('id', expected_id))
-        if brief_id in seen_ids:
-            raise VideoServiceError(f'Duplicate brief id: {brief_id}.')
-        seen_ids.add(brief_id)
-        item = {'id': brief_id}
-        for key in required:
-            if key == 'id':
-                continue
-            item[key] = _normalize_text_field(brief.get(key, ''), f'Brief {brief_id}.{key}')
-        normalized.append(item)
-    if sorted(seen_ids) != list(range(1, BRIEF_COUNT + 1)):
-        raise VideoServiceError(f'Brief ids must be 1 through {BRIEF_COUNT}.')
-    return normalized
 
 
 def validate_script_payload(script_payload):
@@ -1148,6 +1058,48 @@ def download_file(url, output_path):
     return output_path
 
 
+class _BriefItem(PydanticBaseModel):
+    id: int
+    title: str
+    hook: str
+    target_viewer: str
+    core_message: str
+    story_angle: str
+    proof_mechanism: str
+    viewer_tension: str
+    product_role: str
+    visual_hook: str
+    visual_direction: str
+    cta: str
+    why_it_fits_type: str
+    avoid_cliches: str
+
+    @field_validator(
+        'title', 'hook', 'target_viewer', 'core_message', 'story_angle',
+        'proof_mechanism', 'viewer_tension', 'product_role', 'visual_hook',
+        'visual_direction', 'cta', 'why_it_fits_type', 'avoid_cliches',
+        mode='after',
+    )
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('field must not be empty')
+        return v
+
+
+class _BriefsResponse(PydanticBaseModel):
+    briefs: list[_BriefItem]
+
+    @model_validator(mode='after')
+    def _validate_briefs(self) -> '_BriefsResponse':
+        if len(self.briefs) != BRIEF_COUNT:
+            raise ValueError(f'Expected exactly {BRIEF_COUNT} briefs, got {len(self.briefs)}.')
+        ids = [b.id for b in self.briefs]
+        if sorted(ids) != list(range(1, BRIEF_COUNT + 1)):
+            raise ValueError(f'Brief ids must be 1 through {BRIEF_COUNT}, got {ids}.')
+        return self
+
+
 def generate_video_briefs(seed_media_ids, brand, video_type, aspect_ratio=DEFAULT_ASPECT_RATIO):
     """Return a list of 5 normalized video brief dicts for the given seed media and brand.
 
@@ -1185,8 +1137,12 @@ def generate_video_briefs(seed_media_ids, brand, video_type, aspect_ratio=DEFAUL
     }
 
     prompt = build_briefs_prompt(video_type, aspect_ratio, context)
-    response = _call_json(prompt)
-    return normalize_briefs_response(response, video_type=video_type)
+    result = _openai_chat(
+        messages=[{'role': 'user', 'content': prompt}],
+        text_format=_BriefsResponse,
+    )
+    validate_video_type(video_type)
+    return [b.model_dump() for b in result.briefs]
 
 
 def generate_video_script(seed_media_ids, brand, brief, video_type, aspect_ratio=DEFAULT_ASPECT_RATIO):
