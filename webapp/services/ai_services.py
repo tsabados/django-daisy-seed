@@ -42,29 +42,24 @@ def _extract_message_text(message):
     return str(content or '').strip()
 
 
-def _openai_chat(messages, model=OpenAIModel.QUICK, **kwargs):
-    """Send a chat request to OpenAI and return the response text."""
+def _openai_chat(messages, model=OpenAIModel.QUICK, text_format=None, **kwargs):
+    """Send a chat request to OpenAI.
+
+    If text_format is given, uses structured outputs and returns the parsed Pydantic object.
+    Otherwise returns the response text string.
+    """
     client = _get_openai_client()
     kwargs.setdefault("reasoning", {"effort": "low"})
     kwargs.update(
         model=model.value,
         input=messages,
     )
+    if text_format is not None:
+        kwargs["text_format"] = text_format
+        response = client.responses.parse(**kwargs)
+        return response.output_parsed
     response = client.responses.create(**kwargs)
     return response.output_text.strip()
-
-
-def _openai_chat_parsed(messages, text_format, model=OpenAIModel.QUICK, **kwargs):
-    """Send a chat request to OpenAI using structured outputs and return the parsed Pydantic object."""
-    client = _get_openai_client()
-    kwargs.setdefault("reasoning", {"effort": "low"})
-    kwargs.update(
-        model=model.value,
-        input=messages,
-        text_format=text_format,
-    )
-    response = client.responses.parse(**kwargs)
-    return response.output_parsed
 
 
 def _get_gemini_client():
@@ -121,7 +116,7 @@ def extract_brand_data(markdown_content, language_instruction=None):
     if language_instruction:
         system_content = system_content.rstrip() + f'\n{language_instruction}'
 
-    result = _openai_chat_parsed(
+    result = _openai_chat(
         messages=[
             {'role': 'system', 'content': system_content},
             {'role': 'user', 'content': markdown_content[:20000]},
@@ -144,7 +139,7 @@ def select_brand_urls(all_urls, base_url):
 
     url_list = '\n'.join(all_urls[:200])  # cap to avoid token overflow
     user_msg = f'Website: {base_url}\n\nAvailable URLs:\n{url_list}'
-    result = _openai_chat_parsed(
+    result = _openai_chat(
         messages=[
             {'role': 'system', 'content': BRAND_URL_SELECT_PROMPT},
             {'role': 'user', 'content': user_msg},
@@ -167,7 +162,7 @@ def select_product_urls(all_urls, base_url):
 
     url_list = '\n'.join(all_urls[:500])  # cap to avoid token overflow
     user_msg = f'Website: {base_url}\n\nAvailable URLs:\n{url_list}'
-    result = _openai_chat_parsed(
+    result = _openai_chat(
         messages=[
             {'role': 'system', 'content': PRODUCT_URL_SELECT_PROMPT},
             {'role': 'user', 'content': user_msg},
@@ -192,7 +187,7 @@ def summarize_page_markdown(markdown_content, language_name='English'):
     from services.prompts.language import get_language_instruction
     lang_instruction = get_language_instruction(language_name)
 
-    result = _openai_chat_parsed(
+    result = _openai_chat(
         messages=[
             {
                 'role': 'system',
