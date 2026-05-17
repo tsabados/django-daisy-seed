@@ -1,2 +1,3 @@
 # Credit cost constants
 IMAGE_GENERATION_COST = 1
+VIDEO_GENERATION_COST = 5

@@ -25,13 +25,19 @@ document.addEventListener('alpine:init', () => {
     // ── AI state ──────────────────────────────────────────────────────────
     topic: '',
     postType: 'lifestyle',
+    mediaType: 'image',       // 'image' or 'video'
+    videoType: 'teaser',      // matches VIDEO_TYPES in video_poc
+    selectedBrief: null,      // full brief dict selected by user
+    savedBriefs: [],          // briefs saved to DB for this post
     seedMedia: [],           // [{key, mediaPk, url}]  key=client uid, mediaPk=DB pk
     _tempIdCounter: 0,
     generating: false,
     generationStep: '',
     suggestingTopic: false,
     topicSuggestions: [],
+    expandedBriefId: null,
     _generationSseCleanup: null,
+    _topicSseCleanup: null,
 
     // ── Preview carousel state ────────────────────────────────────────────
     carouselIndex: 0,
@@ -61,7 +67,23 @@ document.addEventListener('alpine:init', () => {
       this.postStatus = this.$el.dataset.postStatus || '';
       this.scheduledAt = this.$el.dataset.scheduledAt || '';
       this.unscheduleUrl = this.$el.dataset.unscheduleUrl || null;
+
+      // Restore video fields for existing posts
+      if (this.$el.dataset.mediaType) this.mediaType = this.$el.dataset.mediaType;
+      if (this.$el.dataset.videoType) this.videoType = this.$el.dataset.videoType;
+      if (this.$el.dataset.videoBrief) {
+        try { this.selectedBrief = JSON.parse(this.$el.dataset.videoBrief); } catch (e) { 
+          console.error('Failed to parse video brief JSON:', e);
+        }
+      }
+      if (this.$el.dataset.videoSuggestions) {
+        try { this.savedBriefs = JSON.parse(this.$el.dataset.videoSuggestions); } catch (e) { 
+          console.error('Failed to parse video suggestions JSON:', e);
+        }
+      }
+
       this._subscribeGenerationSSE();
+      this._subscribeTopicSuggestionsSSE();
 
       // If post is currently generating, resume SSE listener
       const processingStatus = this.$el.dataset.processingStatus || '';
@@ -83,13 +105,9 @@ document.addEventListener('alpine:init', () => {
       const ta = this.$el.querySelector('#id_shared_text');
       if (ta) this.sharedText = ta.value;
 
-      // Set initial mode: existing posts → editor, new → ai
-      const editIndicator = this.$el.closest('[x-data]')?.querySelector('h2');
-      if (editIndicator && editIndicator.textContent.trim() === 'Edit Post') {
-        this.mode = 'editor';
-      } else {
-        this.mode = 'ai';
-      }
+      // Set initial mode from data attribute (edit: editor unless post is empty), new posts: ai
+      const initialMode = this.$el.dataset.initialMode;
+      this.mode = initialMode || 'ai';
 
       // Load topic and postType from hidden fields
       const topicField = document.getElementById('id_topic');
@@ -197,6 +215,7 @@ document.addEventListener('alpine:init', () => {
       document.removeEventListener('up:layer:accepted', this._pickerHandler);
       document.removeEventListener('post-changed', this._postChangedHandler);
       if (this._generationSseCleanup) this._generationSseCleanup();
+      if (this._topicSseCleanup) this._topicSseCleanup();
       const postForm = document.getElementById('post-form');
       if (postForm && this._dirtyHandler) {
         postForm.removeEventListener('input', this._dirtyHandler);
@@ -367,6 +386,8 @@ document.addEventListener('alpine:init', () => {
     async suggestTopic() {
       if (this.suggestingTopic) return;
       this.suggestingTopic = true;
+      this.topicSuggestions = [];
+      this.selectedBrief = null;
       try {
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
         const resp = await fetch('/social-media/ai/suggest-topic/', {
@@ -377,23 +398,68 @@ document.addEventListener('alpine:init', () => {
           },
           body: JSON.stringify({
             seed_media_ids: this.seedMedia.map(i => i.mediaPk),
+            media_type: this.mediaType,
+            video_type: this.videoType,
           }),
         });
         const data = await resp.json();
-        if (data.topics && data.topics.length) {
-          this.topicSuggestions = data.topics;
+        if (data.error) {
+          console.error('Suggest topic error:', data.error);
+          this.suggestingTopic = false;
         }
+        // suggestingTopic stays true until SSE topic-suggestions fires
       } catch (e) {
         console.error('Failed to suggest topic:', e);
-      } finally {
         this.suggestingTopic = false;
       }
     },
 
-    selectTopic(t) {
-      this.topic = t;
-      this.syncHiddenField('id_topic', t);
+    _subscribeTopicSuggestionsSSE() {
+      if (this._topicSseCleanup) this._topicSseCleanup();
+
+      const handler = (e) => {
+        if (!e.detail) return;
+        this.suggestingTopic = false;
+        if (e.detail.error) {
+          console.error('Topic suggestion error:', e.detail.error);
+          return;
+        }
+        if (e.detail.topics) {
+          // Image mode: plain text list
+          this.topicSuggestions = e.detail.topics.map(t => ({ type: 'text', value: t }));
+        } else if (e.detail.briefs) {
+          // Video mode: brief objects
+          this.topicSuggestions = e.detail.briefs.map(b => ({ type: 'brief', value: b }));
+          this.savedBriefs = e.detail.briefs;
+          this.isDirty = true;
+        }
+      };
+
+      document.addEventListener('topic-suggestions', handler);
+      this._topicSseCleanup = () => {
+        document.removeEventListener('topic-suggestions', handler);
+        this._topicSseCleanup = null;
+      };
+    },
+
+    selectTopic(suggestion) {
+      if (suggestion.type === 'brief') {
+        const brief = suggestion.value;
+        this.selectedBrief = brief;
+        this.syncHiddenField('id_video_brief', JSON.stringify(brief));
+      } else {
+        this.selectedBrief = null;
+        this.topic = suggestion.value;
+        this.syncHiddenField('id_topic', this.topic);
+        this.syncHiddenField('id_video_brief', '');
+      }
       this.topicSuggestions = [];
+      this.isDirty = true;
+    },
+
+    generateButtonLabel() {
+      if (this.mediaType === 'video') return 'Generate Video Post (5 credits)';
+      return 'Generate Post (1 credit)';
     },
 
     // ── AI: Generate Post ─────────────────────────────────────────────────
@@ -401,7 +467,7 @@ document.addEventListener('alpine:init', () => {
     async generatePost() {
       if (this.generating) return;
       this.generating = true;
-      this.generationStep = 'Generating your post...';
+      this.generationStep = this.mediaType === 'video' ? 'Generating video script…' : 'Generating your post…';
       try {
         await this.savePost(false, 'generate');
       } catch (e) {
@@ -432,12 +498,13 @@ document.addEventListener('alpine:init', () => {
       document.addEventListener('generation-done', handler);
       this._generationSseCleanup = cleanup;
 
-      // Safety timeout: give up after 5 minutes
+      // Safety timeout: 5 min for image, 20 min for video
+      const timeoutMs = this.mediaType === 'video' ? 20 * 60 * 1000 : 5 * 60 * 1000;
       timer = setTimeout(() => {
         cleanup();
         this.generating = false;
         this.generationStep = '';
-      }, 5 * 60 * 1000);
+      }, timeoutMs);
     },
 
     _onGenerationDone(data) {
@@ -714,6 +781,10 @@ document.addEventListener('alpine:init', () => {
           shared_text: this.sharedText,
           topic: this.topic,
           post_type: this.postType || document.getElementById('id_post_type')?.value || '',
+          media_type: this.mediaType,
+          video_type: this.videoType,
+          video_brief: this.selectedBrief || null,
+          video_suggestions: this.savedBriefs.length > 0 ? this.savedBriefs : null,
           ai_instruction: document.getElementById('id_ai_instruction')?.value || '',
           action: action,
           platforms: platforms,
@@ -734,6 +805,7 @@ document.addEventListener('alpine:init', () => {
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({}));
           if (errData.error) console.error('Save failed:', errData.error);
+          throw new Error(errData.error || 'Failed to save post');
           return false;
         }
 

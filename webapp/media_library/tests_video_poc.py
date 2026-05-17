@@ -21,7 +21,7 @@ from services.video_poc import (
     validate_script_payload,
 )
 
-from .models import Image, ImageGroup
+from .models import Media, MediaGroup
 
 
 def _briefs_response():
@@ -189,15 +189,15 @@ class VideoPocTests(TestCase):
             language='English',
             style_guide='Warm, direct, cinematic.',
         )
-        self.group = ImageGroup.objects.create(
+        self.group = MediaGroup.objects.create(
             user=self.user,
             project=self.project,
             title='Hero Product',
             description='A tactile product with a clear daily use case.',
-            type=ImageGroup.GroupType.PRODUCT,
+            type=MediaGroup.GroupType.PRODUCT,
         )
         self.original_product_url = 'https://cdn.example.com/original-product.jpg'
-        Image.objects.create(image_group=self.group, external_url=self.original_product_url)
+        Media.objects.create(media_group=self.group, external_url=self.original_product_url)
 
     def test_generate_briefs_writes_five_video_native_briefs(self):
         with tempfile.TemporaryDirectory() as tmpdir, override_settings(MEDIA_ROOT=tmpdir):
@@ -378,7 +378,7 @@ class VideoPocTests(TestCase):
             self.assertEqual(generate_image.call_count, 1)
             refs = generate_image.call_args_list[0].kwargs['reference_images']
             self.assertEqual(len(refs), 1)
-            self.assertIsInstance(refs[0], Image)
+            self.assertIsInstance(refs[0], Media)
 
             payload = json.loads((run_dir / 'muapi_payloads' / 'clip_01.json').read_text())
             self.assertTrue(payload['images_list'][0].startswith('https://stryng-test.ngrok.app/media/'))

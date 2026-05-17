@@ -57,8 +57,12 @@ class SocialMediaPost(models.Model):
     )
     title = fields.TruncatingCharField(max_length=200)
     shared_text = models.TextField(blank=True)
-    topic = fields.TruncatingCharField(max_length=2000, blank=True)
+    topic = models.TextField(blank=True)
     post_type = fields.TruncatingCharField(max_length=20, choices=POST_TYPE_CHOICES, blank=True)
+    media_type = fields.TruncatingCharField(max_length=10, default='image')
+    video_type = fields.TruncatingCharField(max_length=30, blank=True)
+    video_brief = models.JSONField(null=True, blank=True)
+    video_suggestions = models.JSONField(null=True, blank=True)
     ai_instruction = models.TextField(blank=True)
     status = fields.TruncatingCharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     processing_status = fields.TruncatingCharField(

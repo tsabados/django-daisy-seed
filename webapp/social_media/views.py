@@ -7,13 +7,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from credits.constants import IMAGE_GENERATION_COST
+from credits.constants import IMAGE_GENERATION_COST, VIDEO_GENERATION_COST
 from credits.models import available_credits
 
 from brand.models import Brand
 from integrations.models import IntegrationConnection
 from media_library.models import Media
-from services.ai_services import suggest_topic, edit_text
+from services.ai_services import edit_text
 from .forms import SocialMediaPostForm
 from .models import (
     PLATFORM_CHOICES,
@@ -74,7 +74,9 @@ def post_form(request, pk=None):
             {'media': s.media.id, 'url': s.media.url, 'is_video': s.media.is_video}
             for s in post.seed_media.select_related('media').order_by('sort_order')
         ]
-        extra_ctx = {'post': post, 'is_edit': True}
+        has_content = bool(post.shared_text.strip()) or bool(selected_shared_media)
+        initial_mode = 'ai' if not has_content else 'editor'
+        extra_ctx = {'post': post, 'is_edit': True, 'initial_mode': initial_mode}
     else:
         post = None
         form = SocialMediaPostForm()
@@ -188,19 +190,35 @@ def _enqueue_generation(request, post):
     if not brand:
         return JsonResponse({'error': 'Brand not configured'})
 
-    if available_credits(request.user) < IMAGE_GENERATION_COST:
-        return JsonResponse({
+    if post.media_type == 'video':
+        cost = VIDEO_GENERATION_COST
+    else:
+        cost = IMAGE_GENERATION_COST
+
+    if available_credits(request.user) < cost:
+        return JsonResponse(
+            {
             'error': 'Insufficient credits',
-            'credits_required': IMAGE_GENERATION_COST,
-        })
+            'credits_required': cost,
+            },
+            status=402,
+        )
 
     post.processing_status = 'generating'
     post.save(update_fields=['processing_status'])
 
+    from django_q.tasks import async_task
+    if post.media_type == 'video':
+        async_task(
+            'social_media.tasks.generate_video_post_task',
+            post.pk,
+            brand.pk,
+        )
+        return None
+
     platforms = list(post.platforms.values_list('platform', flat=True))
     seed_media_ids = list(post.seed_media.order_by('sort_order').values_list('media_id', flat=True))
 
-    from django_q.tasks import async_task
     async_task(
         'social_media.tasks.generate_post_task',
         post.pk,
@@ -261,6 +279,10 @@ def post_save(request):
     post.shared_text = data.get('shared_text', '')
     post.topic = data.get('topic', '')
     post.post_type = data.get('post_type', '')
+    post.media_type = data.get('media_type', 'image')
+    post.video_type = data.get('video_type', '')
+    post.video_brief = data.get('video_brief') or None
+    post.video_suggestions = data.get('video_suggestions') or None
     post.ai_instruction = data.get('ai_instruction', '')
 
     # Status
@@ -367,19 +389,19 @@ def ai_suggest_topic(request):
         return JsonResponse({'error': 'Brand not configured'}, status=400)
 
     seed_media_ids = data.get('seed_media_ids', [])
-    seed_media = list(
-        Media.objects.filter(
-            id__in=seed_media_ids,
-            media_group__project=request.project,
-        )
-    ) if seed_media_ids else []
+    media_type = data.get('media_type', 'image')
+    video_type = data.get('video_type', 'teaser')
 
-    try:
-        topics = suggest_topic(brand, seed_media)
-        return JsonResponse({'topics': topics})
-    except Exception:
-        logger.exception('Failed to suggest topic')
-        return JsonResponse({'error': 'Failed to suggest topic'}, status=500)
+    from django_q.tasks import async_task
+    async_task(
+        'social_media.tasks.suggest_topic_task',
+        request.user.pk,
+        brand.pk,
+        seed_media_ids,
+        media_type,
+        video_type,
+    )
+    return JsonResponse({'queued': True})
 
 
 @login_required

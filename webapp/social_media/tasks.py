@@ -184,6 +184,142 @@ def generate_post_task(post_id, brand_id, topic, post_type, seed_media_ids, plat
         _notify_generation_done(post_id, 'error', str(e))
 
 
+def _notify_topic_suggestions(user_id, payload):
+    try:
+        send_event(f'user-{user_id}', 'message', {'type': 'topic-suggestions', **payload})
+    except Exception:
+        logger.exception('Failed to send SSE topic-suggestions event for user %d', user_id)
+
+
+def suggest_topic_task(user_id, brand_id, seed_media_ids, media_type='image', video_type='teaser'):
+    """
+    Async task: generate topic/brief suggestions and notify the user via SSE.
+
+    For media_type='image': returns a list of text topic strings.
+    For media_type='video': returns a list of 5 brief dicts from video brief generation.
+    """
+    from brand.models import Brand
+    from media_library.models import Media
+    from services.ai_services import suggest_topic
+
+    try:
+        brand = Brand.objects.get(pk=brand_id)
+    except Brand.DoesNotExist:
+        logger.error('suggest_topic_task: brand %d not found', brand_id)
+        _notify_topic_suggestions(user_id, {'error': 'Brand not found'})
+        return
+
+    seed_media = list(
+        Media.objects.filter(id__in=seed_media_ids).select_related('media_group')
+    ) if seed_media_ids else []
+
+    if media_type == 'video':
+        from services.video_service import generate_video_briefs, VideoServiceError
+
+        if not seed_media:
+            _notify_topic_suggestions(user_id, {'error': 'Select seed media to generate video briefs.'})
+            return
+
+        try:
+            briefs = generate_video_briefs(seed_media_ids, brand, video_type)
+        except VideoServiceError as exc:
+            logger.exception('suggest_topic_task: video brief generation failed for user %d', user_id)
+            _notify_topic_suggestions(user_id, {'error': str(exc)})
+            return
+        except Exception:
+            logger.exception('suggest_topic_task: unexpected error for user %d', user_id)
+            _notify_topic_suggestions(user_id, {'error': 'Failed to generate video briefs.'})
+            return
+
+        _notify_topic_suggestions(user_id, {'briefs': briefs, 'video_type': video_type})
+    else:
+        try:
+            topics = suggest_topic(brand, seed_media)
+        except Exception:
+            logger.exception('suggest_topic_task: topic generation failed for user %d', user_id)
+            _notify_topic_suggestions(user_id, {'error': 'Failed to suggest topics.'})
+            return
+        _notify_topic_suggestions(user_id, {'topics': topics})
+
+
+def generate_video_post_task(post_id, brand_id):
+    """
+    Async task: generate a video for a social media post.
+
+    Reads post.video_brief (stored JSON) and post.video_type, generates a script,
+    submits to Muapi, downloads the result, attaches it to the post, and spends 5 credits.
+    """
+    from brand.models import Brand
+    from credits.models import available_credits, spend_credits
+    from credits.constants import VIDEO_GENERATION_COST
+    from services.video_service import generate_video_script, render_video_to_media, VideoServiceError
+    from .models import SocialMediaPostMedia
+
+    try:
+        post = SocialMediaPost.objects.select_related('project', 'user').get(pk=post_id)
+    except SocialMediaPost.DoesNotExist:
+        logger.error('generate_video_post_task: post %d not found', post_id)
+        return
+
+    try:
+        brand = Brand.objects.get(pk=brand_id)
+    except Brand.DoesNotExist:
+        logger.error('generate_video_post_task: brand %d not found', brand_id)
+        post.processing_status = 'error'
+        post.save(update_fields=['processing_status'])
+        _notify_generation_done(post_id, 'error', 'Brand not found')
+        return
+
+    if available_credits(post.user) < VIDEO_GENERATION_COST:
+        post.processing_status = 'error'
+        post.save(update_fields=['processing_status'])
+        _notify_generation_done(post_id, 'error', 'Insufficient credits for video generation.')
+        return
+
+    brief = post.video_brief
+    if not brief or not isinstance(brief, dict):
+        post.processing_status = 'error'
+        post.save(update_fields=['processing_status'])
+        _notify_generation_done(post_id, 'error', 'No video brief saved on post.')
+        return
+
+    seed_media_ids = list(
+        post.seed_media.select_related('media').values_list('media_id', flat=True)
+    )
+    video_type = post.video_type or 'teaser'
+
+    try:
+        script_dict = generate_video_script(seed_media_ids, brand, brief, video_type)
+    except (VideoServiceError, Exception) as exc:
+        logger.exception('generate_video_post_task: script generation failed for post %d', post_id)
+        post.processing_status = 'error'
+        post.save(update_fields=['processing_status'])
+        _notify_generation_done(post_id, 'error', str(exc))
+        return
+
+    try:
+        media = render_video_to_media(script_dict, post.user, post.project, seed_media_ids=seed_media_ids)
+    except (VideoServiceError, Exception) as exc:
+        logger.exception('generate_video_post_task: video render failed for post %d', post_id)
+        post.processing_status = 'error'
+        post.save(update_fields=['processing_status'])
+        _notify_generation_done(post_id, 'error', str(exc))
+        return
+
+    spend_credits(post.user, VIDEO_GENERATION_COST, 'Video post generation')
+
+    SocialMediaPostMedia.objects.create(post=post, media=media, sort_order=0)
+
+    post.processing_status = 'completed'
+    post.save(update_fields=['processing_status'])
+
+    media_items = [
+        {'id': m.media.id, 'url': m.media.url, 'is_video': m.media.is_video}
+        for m in post.shared_media.select_related('media').order_by('sort_order')
+    ]
+    _notify_generation_done(post_id, 'completed', shared_text=post.shared_text, media=media_items)
+
+
 def autopost_all_projects_task():
     """
     Periodic task (daily at 9am UTC): enqueue autopost_project_task for every

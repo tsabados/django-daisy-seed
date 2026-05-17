@@ -8,6 +8,11 @@
       data-processing-status="{{ post.processing_status }}"
       data-scheduled-at="{{ post.scheduled_at|date:'c'|default:'' }}"
       data-unschedule-url="{% url 'social_media:post_unschedule' post.pk %}"
+      data-media-type="{{ post.media_type|default:'image' }}"
+      data-video-type="{{ post.video_type|default:'teaser' }}"
+      data-video-brief="{{ post.video_brief|to_json_attr }}"
+      data-video-suggestions="{{ post.video_suggestions|to_json_attr }}"
+      data-initial-mode="{{ initial_mode }}"
       {% endif %}>
 <div class="flex flex-col h-full max-h-[90vh]">
 
@@ -115,6 +120,9 @@
                 {{ form.topic.as_hidden }}
                 {{ form.post_type.as_hidden }}
                 {{ form.ai_instruction.as_hidden }}
+                <input type="hidden" id="id_media_type" name="media_type" :value="mediaType">
+                <input type="hidden" id="id_video_type" name="video_type" :value="videoType">
+                <input type="hidden" id="id_video_brief" name="video_brief">
 
                 {# Validation errors #}
                 {% if form.errors %}
@@ -135,6 +143,27 @@
                 {# ── CREATE WITH AI PANEL ── #}
                 {# ═══════════════════════════════════════════════════════════ #}
                 <div x-show="mode === 'ai'" x-cloak class="px-6 py-5 border-b border-zinc-100">
+
+                    {# Media type #}
+                    <div class="mb-5">
+                        <label class="block text-sm font-medium text-zinc-700 mb-1">Media Type</label>
+                        <div class="inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-0.5">
+                            <button type="button"
+                                    @click="mediaType = 'image'; topicSuggestions = []; selectedBrief = null; syncHiddenField('id_media_type', 'image')"
+                                    :class="mediaType === 'image' ? 'bg-white shadow-sm text-indigo-600' : 'text-zinc-500 hover:text-zinc-700'"
+                                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="inline-block w-3.5 h-3.5 mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                Image Post
+                            </button>
+                            <button type="button"
+                                    @click="mediaType = 'video'; topicSuggestions = []; selectedBrief = null; syncHiddenField('id_media_type', 'video')"
+                                    :class="mediaType === 'video' ? 'bg-white shadow-sm text-indigo-600' : 'text-zinc-500 hover:text-zinc-700'"
+                                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="inline-block w-3.5 h-3.5 mr-1 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                Video Post
+                            </button>
+                        </div>
+                    </div>
 
                     {# Seed media #}
                     <div class="mb-5">
@@ -168,24 +197,15 @@
                             </svg>
                             Add seed media
                         </button>
-                        <a href="{% url 'media_library:media_editor_modal' %}"
-                           up-layer="new"
-                           up-mode="modal"
-                           up-history="false"
-                           up-size="large"
-                           up-class="media-editor"
-                           class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-xs text-zinc-500 hover:border-violet-400 hover:text-violet-600">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-                            </svg>
-                            Open media editor
-                        </a>
                     </div>
 
-                    {# Topic #}
+                    {# Topic / Video Concept #}
                     <div class="mb-5">
                         <div class="flex items-center justify-between mb-1">
-                            <label class="block text-sm font-medium text-zinc-700">Topic</label>
+                            <label class="block text-sm font-medium text-zinc-700">
+                                <span x-show="mediaType === 'image'">Topic</span>
+                                <span x-show="mediaType === 'video'" x-cloak>Video Concept</span>
+                            </label>
                             <button type="button"
                                     @click="suggestTopic()"
                                     :disabled="suggestingTopic"
@@ -197,43 +217,140 @@
                                 </span>
                             </button>
                         </div>
-                        <c-ai_textarea 
-                            actions="rewrite,improve,shorten"
-                            auto-hide="True"
-                            custom_instruction=True>
-                            <input type="text"
-                               x-model="topic"
-                               @input="syncHiddenField('id_topic', topic)"
-                               class="input input-bordered w-full"
-                               placeholder="Post topic…" />
-                        </c-ai_textarea>
+                        {# Topic input — image only #}
+                        <div x-show="mediaType === 'image'">
+                            <c-ai_textarea 
+                                actions="rewrite,improve,shorten"
+                                auto-hide="True"
+                                custom_instruction=True>
+                                <input type="text"
+                                   x-model="topic"
+                                   @input="syncHiddenField('id_topic', topic)"
+                                   class="input input-bordered w-full"
+                                   placeholder="Post topic…" />
+                            </c-ai_textarea>
+                        </div>
+                        {# No brief placeholder — video only #}
+                        <div x-show="mediaType === 'video' && !selectedBrief && !suggestingTopic && topicSuggestions.length === 0" x-cloak
+                             class="mt-1 rounded-md border border-dashed border-indigo-200 bg-indigo-50/50 px-3 py-3 text-center">
+                            <p class="text-xs text-zinc-500">
+                                No video concept selected.
+                                <template x-if="savedBriefs.length > 0">
+                                    <span>Use <strong>Change</strong> to pick from previously generated concepts, or </span>
+                                </template>
+                                <template x-if="savedBriefs.length === 0">
+                                    <span>Add seed media and use </span>
+                                </template>
+                                the <strong>Suggest</strong> button to generate new ones.
+                            </p>
+                        </div>
+                        {# Selected brief card — video only #}
+                        <div x-show="mediaType === 'video' && selectedBrief" x-cloak
+                             class="relative px-3 py-2.5 rounded-md border border-indigo-300 bg-indigo-50">
+                            <p class="text-xs font-semibold text-indigo-800 mb-0.5" x-text="selectedBrief?.title"></p>
+                            <p class="text-xs text-zinc-600 leading-snug" x-text="selectedBrief?.hook"></p>
+                            <p class="text-xs text-zinc-400 mt-1" x-text="selectedBrief?.story_angle"></p>
+                            <div x-show="expandedBriefId === 'selected'" class="mt-2 pt-2 border-t border-indigo-200 text-xs text-zinc-500 space-y-1">
+                                <p><span class="font-medium text-zinc-600">Target viewer:</span> <span x-text="selectedBrief?.target_viewer"></span></p>
+                                <p><span class="font-medium text-zinc-600">Core message:</span> <span x-text="selectedBrief?.core_message"></span></p>
+                                <p><span class="font-medium text-zinc-600">Proof mechanism:</span> <span x-text="selectedBrief?.proof_mechanism"></span></p>
+                                <p><span class="font-medium text-zinc-600">Viewer tension:</span> <span x-text="selectedBrief?.viewer_tension"></span></p>
+                                <p><span class="font-medium text-zinc-600">Product role:</span> <span x-text="selectedBrief?.product_role"></span></p>
+                                <p><span class="font-medium text-zinc-600">Visual hook:</span> <span x-text="selectedBrief?.visual_hook"></span></p>
+                                <p><span class="font-medium text-zinc-600">Visual direction:</span> <span x-text="selectedBrief?.visual_direction"></span></p>
+                                <p><span class="font-medium text-zinc-600">CTA:</span> <span x-text="selectedBrief?.cta"></span></p>
+                            </div>
+                            <button type="button"
+                                    @click="expandedBriefId = expandedBriefId === 'selected' ? null : 'selected'"
+                                    class="mt-1.5 text-xs text-indigo-400 hover:text-indigo-600">
+                                <span x-text="expandedBriefId === 'selected' ? '▲ Hide details' : '▼ Show details'"></span>
+                            </button>
+                            <button type="button"
+                                    @click="selectedBrief = null; syncHiddenField('id_video_brief', ''); expandedBriefId = null; if (savedBriefs.length > 0) { topicSuggestions = savedBriefs.map(b => ({ type: 'brief', value: b })); }"
+                                    class="absolute top-2 right-2 text-xs text-zinc-400 hover:text-zinc-600">
+                                Change
+                            </button>
+                        </div>
                         {# AI topic suggestions skeleton #}
                         <div x-show="suggestingTopic" x-cloak class="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
-                            <div class="skeleton h-3 w-24 mb-2"></div>
+                            <p class="text-xs font-medium text-indigo-600 mb-2 animate-pulse">
+                                <template x-if="mediaType === 'video'">
+                                    <span>✦ Generating video concepts…</span>
+                                </template>
+                                <template x-if="mediaType !== 'video'">
+                                    <span>✦ Generating topic suggestions…</span>
+                                </template>
+                            </p>
                             <div class="flex flex-col gap-1.5">
                                 <div class="skeleton h-8 w-full rounded-md"></div>
                                 <div class="skeleton h-8 w-full rounded-md"></div>
                                 <div class="skeleton h-8 w-3/4 rounded-md"></div>
                             </div>
                         </div>
-                        {# AI topic suggestions #}
-                        <div x-show="topicSuggestions.length > 0 && !suggestingTopic" class="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+                        {# AI topic suggestions — image mode: plain text list #}
+                        <div x-show="topicSuggestions.length > 0 && !suggestingTopic && mediaType === 'image'" class="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
                             <p class="text-xs font-medium text-indigo-700 mb-2">Select a topic:</p>
                             <div class="flex flex-col gap-1.5">
-                                <template x-for="(t, i) in topicSuggestions" :key="i">
+                                <template x-for="(s, i) in topicSuggestions" :key="i">
                                     <button type="button"
-                                            @click="selectTopic(t)"
+                                            @click="selectTopic(s)"
                                             class="text-left text-xs px-3 py-1.5 rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-colors"
-                                            x-text="t">
+                                            x-text="s.value">
                                     </button>
                                 </template>
                                 <button type="button" @click="topicSuggestions = []" class="mt-1 text-left text-xs text-zinc-400 hover:text-zinc-600">Dismiss</button>
                             </div>
                         </div>
+                        {# AI topic suggestions — video mode: brief cards #}
+                        <div x-show="topicSuggestions.length > 0 && !suggestingTopic && mediaType === 'video'" class="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+                            <p class="text-xs font-medium text-indigo-700 mb-2">Select a video concept:</p>
+                            <div class="flex flex-col gap-2">
+                                <template x-for="(s, i) in topicSuggestions" :key="i">
+                                    <div :class="selectedBrief && selectedBrief.id === s.value.id ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'bg-white hover:bg-indigo-50'"
+                                         class="px-3 py-2.5 rounded-md border border-indigo-200 hover:border-indigo-300 transition-colors">
+                                        <div @click="selectTopic(s)" class="cursor-pointer">
+                                            <p class="text-xs font-semibold text-indigo-800 mb-0.5" x-text="s.value.title"></p>
+                                            <p class="text-xs text-zinc-600 leading-snug" x-text="s.value.hook"></p>
+                                            <p class="text-xs text-zinc-400 mt-1" x-text="s.value.story_angle"></p>
+                                        </div>
+                                        <div x-show="expandedBriefId === s.value.id" class="mt-2 pt-2 border-t border-indigo-100 text-xs text-zinc-500 space-y-1">
+                                            <p><span class="font-medium text-zinc-600">Target viewer:</span> <span x-text="s.value.target_viewer"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Core message:</span> <span x-text="s.value.core_message"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Proof mechanism:</span> <span x-text="s.value.proof_mechanism"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Viewer tension:</span> <span x-text="s.value.viewer_tension"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Product role:</span> <span x-text="s.value.product_role"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Visual hook:</span> <span x-text="s.value.visual_hook"></span></p>
+                                            <p><span class="font-medium text-zinc-600">Visual direction:</span> <span x-text="s.value.visual_direction"></span></p>
+                                            <p><span class="font-medium text-zinc-600">CTA:</span> <span x-text="s.value.cta"></span></p>
+                                        </div>
+                                        <button type="button"
+                                                @click.stop="expandedBriefId = expandedBriefId === s.value.id ? null : s.value.id"
+                                                class="mt-1.5 text-xs text-indigo-400 hover:text-indigo-600">
+                                            <span x-text="expandedBriefId === s.value.id ? '▲ Hide details' : '▼ Show details'"></span>
+                                        </button>
+                                    </div>
+                                </template>
+                                <button type="button" @click="topicSuggestions = []; selectedBrief = null; expandedBriefId = null" class="mt-1 text-left text-xs text-zinc-400 hover:text-zinc-600">Dismiss</button>
+                            </div>
+                        </div>
                     </div>
 
-                    {# Post type #}
-                    <div class="mb-5">
+                    {# Video type — video only #}
+                    <div class="mb-5" x-show="mediaType === 'video'" x-cloak>
+                        <label class="block text-sm font-medium text-zinc-700 mb-1">Video Type</label>
+                        <select x-model="videoType"
+                                @change="syncHiddenField('id_video_type', videoType); topicSuggestions = []; selectedBrief = null"
+                                class="select select-bordered w-full">
+                            <option value="teaser">Teaser — build intrigue before reveal</option>
+                            <option value="demo">Demo — show the product in use</option>
+                            <option value="problem_solution">Problem / Solution — tension then fix</option>
+                            <option value="social_proof">Social Proof — truthful proof mechanics</option>
+                            <option value="offer">Offer — concrete reason to act</option>
+                        </select>
+                    </div>
+
+                    {# Post type — image only #}
+                    <div class="mb-5" x-show="mediaType === 'image'" x-cloak>
                         <label class="block text-sm font-medium text-zinc-700 mb-1">Post Type</label>
                         <select x-model="postType"
                                 @change="syncHiddenField('id_post_type', postType)"
@@ -254,7 +371,7 @@
                             <template x-if="!generating">
                                 <span class="inline-flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
-                                    Generate Post
+                                    <span x-text="generateButtonLabel()"></span>
                                 </span>
                             </template>
                             <template x-if="generating">

@@ -14,7 +14,7 @@ from urllib.parse import quote, urlparse
 import requests
 from django.conf import settings
 
-from media_library.models import Image, ImageGroup
+from media_library.models import Media, MediaGroup
 from services.ai_services import OpenAIModel, _get_brand_context, _openai_chat
 
 
@@ -185,8 +185,8 @@ def read_json(path):
 
 
 def image_reference_summary(image):
-    group = image.image_group
-    source = image.external_url or (image.image.name if image.image else '')
+    group = image.media_group
+    source = image.external_url or (image.file.name if image.file else '')
     return {
         'id': image.id,
         'group_title': group.title,
@@ -203,7 +203,7 @@ def build_group_context(group):
         'brand_language': 'English',
         'brand_style_guide': '',
     }
-    images = list(group.images.all().order_by('id'))
+    images = list(group.media_items.filter(media_type='image').order_by('id'))
     return {
         'project': {
             'id': group.project_id,
@@ -221,12 +221,12 @@ def build_group_context(group):
 
 
 def _image_source(image):
-    return image.external_url or (image.image.name if image.image else '')
+    return image.external_url or (image.file.name if image.file else '')
 
 
 def _image_data_url(image):
-    if image.image and image.image.name:
-        path = Path(image.image.path)
+    if image.file and image.file.name:
+        path = Path(image.file.path)
         mime_type = mimetypes.guess_type(path.name)[0] or 'image/jpeg'
         image_data = path.read_bytes()
     elif image.external_url:
@@ -356,7 +356,7 @@ def normalize_visual_analysis_response(response):
 
 
 def analyze_product_visuals(group, run_dir=None):
-    images = list(group.images.all().order_by('id')[:VISUAL_ANALYSIS_IMAGE_LIMIT])
+    images = list(group.media_items.filter(media_type='image').order_by('id')[:VISUAL_ANALYSIS_IMAGE_LIMIT])
     if not images:
         raise VideoPocError('Visual analysis requires at least one reference image.')
     context = build_group_context(group)
@@ -885,12 +885,12 @@ def generate_briefs(
     validate_aspect_ratio(aspect_ratio)
     try:
         group = (
-            ImageGroup.objects.select_related('project')
-            .prefetch_related('images')
+            MediaGroup.objects.select_related('project')
+            .prefetch_related('media_items')
             .get(pk=group_id)
         )
-    except ImageGroup.DoesNotExist as exc:
-        raise VideoPocError(f'ImageGroup {group_id} was not found.') from exc
+    except MediaGroup.DoesNotExist as exc:
+        raise VideoPocError(f'MediaGroup {group_id} was not found.') from exc
     run_id, run_dir = get_run_dir(run_id)
     context = build_group_context(group)
     if visual_analysis is None:
@@ -1048,8 +1048,8 @@ def update_manifest(run_dir, updates):
 def _load_pil_image_from_media_image(image):
     from PIL import Image as PILImage
 
-    if image.image and image.image.name:
-        return PILImage.open(image.image.path)
+    if image.file and image.file.name:
+        return PILImage.open(image.file.path)
     if image.external_url:
         response = requests.get(image.external_url, timeout=30)
         response.raise_for_status()
@@ -1494,8 +1494,8 @@ NEGATIVE CONSTRAINTS:
 def _image_public_url(image):
     if image.external_url:
         return image.external_url
-    if image.image and image.image.name:
-        return public_media_url(image.image.path)
+    if image.file and image.file.name:
+        return public_media_url(image.file.path)
     return ''
 
 
@@ -1561,7 +1561,7 @@ def generate_keyframes_and_payloads(
     create_keyframe=False,
 ):
     group_id = script_payload.get('metadata', {}).get('group', {}).get('id')
-    product_images = list(Image.objects.filter(image_group_id=group_id).order_by('id')) if group_id else []
+    product_images = list(Media.objects.filter(media_group_id=group_id, media_type='image').order_by('id')) if group_id else []
     keyframe_dir = Path(run_dir) / 'keyframes'
     payload_dir = Path(run_dir) / 'muapi_payloads'
     keyframe_dir.mkdir(parents=True, exist_ok=True)

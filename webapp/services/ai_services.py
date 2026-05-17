@@ -261,6 +261,44 @@ def suggest_topic(brand, seed_media):
             topics.append(cleaned)
     return topics if topics else [raw]
 
+
+def analyze_media_visuals(media_list):
+    """Run OpenAI Vision visual analysis on a list of Media objects.
+
+    Returns a normalized visual analysis dict suitable for use in video prompts.
+    """
+    from services.video_service import (
+        VISUAL_ANALYSIS_IMAGE_LIMIT,
+        VISUAL_ANALYSIS_PROMPT,
+        _call_vision_json,
+        normalize_visual_analysis_response,
+    )
+
+    images = list(media_list)[:VISUAL_ANALYSIS_IMAGE_LIMIT]
+    if not images:
+        return {}
+
+    group = images[0].media_group
+    group_json = __import__('json').dumps({
+        'id': group.id,
+        'title': group.title,
+        'description': group.description,
+    }, indent=2)
+    reference_images_json = __import__('json').dumps([
+        {
+            'id': m.id,
+            'source': m.external_url or (m.file.name if m.file else ''),
+        }
+        for m in images
+    ], indent=2)
+    prompt = VISUAL_ANALYSIS_PROMPT.format(
+        group_json=group_json,
+        reference_images_json=reference_images_json,
+    )
+    raw = _call_vision_json(prompt, images)
+    return normalize_visual_analysis_response(raw)
+
+
 def _generate_gemini_media(prompt, input_media=None):
     """Call Gemini media generation and return (media_data, mime_type) or None."""
     from io import BytesIO
