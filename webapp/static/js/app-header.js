@@ -10,7 +10,7 @@
  *   <header x-data="appHeader({ projectId: 123, isScraping: false })">
  */
 
-function appHeader({ projectId = null, isScraping = false, isImporting = false } = {}) {
+function appHeader({ projectId = null, isScraping = false, isImporting = false, credits = 0 } = {}) {
   return {
     // ── Brand scraping state ─────────────────────────────────────────
     isScraping,
@@ -18,10 +18,14 @@ function appHeader({ projectId = null, isScraping = false, isImporting = false }
     // ── Product import state ─────────────────────────────────────────
     isImporting,
 
+    // ── Credits state ────────────────────────────────────────────────
+    credits,
+
     // ── Lifecycle ────────────────────────────────────────────────────
     init() {
       this._listenBrandEvents();
       this._listenImportEvents();
+      this._listenCreditsEvents();
     },
 
     destroy() {
@@ -31,6 +35,7 @@ function appHeader({ projectId = null, isScraping = false, isImporting = false }
       document.removeEventListener('media_library:import_started', this._onImportStarted);
       document.removeEventListener('media_library:import_completed', this._onImportCompleted);
       document.removeEventListener('media_library:import_error', this._onImportError);
+      document.removeEventListener('credits:updated', this._onCreditsUpdated);
     },
 
     // ── Brand scraping events ────────────────────────────────────────
@@ -67,6 +72,16 @@ function appHeader({ projectId = null, isScraping = false, isImporting = false }
       document.addEventListener('media_library:import_started', this._onImportStarted);
       document.addEventListener('media_library:import_completed', this._onImportCompleted);
       document.addEventListener('media_library:import_error', this._onImportError);
+    },
+
+    // ── Credits events ───────────────────────────────────────────────
+    _listenCreditsEvents() {
+      this._onCreditsUpdated = (e) => {
+        if (e.detail && e.detail.credits !== undefined) {
+          this.credits = e.detail.credits;
+        }
+      };
+      document.addEventListener('credits:updated', this._onCreditsUpdated);
     },
 
     // ── Toast notifications ──────────────────────────────────────────

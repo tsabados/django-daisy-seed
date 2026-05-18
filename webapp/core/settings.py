@@ -284,6 +284,7 @@ Q_CLUSTER = {
     'queue_limit': 50,
     'bulk': 10,
     'orm': 'default',
+    'catch_up': False,  # Skip missed runs to avoid backlog on startup
 }
 
 # ─── Cache ───────────────────────────────────────────────────────────────────

@@ -96,6 +96,8 @@ def spend_credits(user, amount, description):
     Creates one CreditSpend and one CreditAllocation per consumed grant bucket.
     Returns True if successful, False if insufficient credits.
     """
+    from django.db import transaction
+
     now = timezone.now()
     active_grants = list(
         CreditGrant.objects.filter(user=user, expires_at__gt=now).order_by('expires_at')
@@ -105,22 +107,24 @@ def spend_credits(user, amount, description):
     if total_available < amount:
         return False
 
-    spend = CreditSpend.objects.create(user=user, amount=amount, description=description)
+    with transaction.atomic():
+        spend = CreditSpend.objects.create(user=user, amount=amount, description=description)
 
-    remaining_to_spend = amount
-    allocations_to_create = []
+        remaining_to_spend = amount
+        allocations_to_create = []
 
-    for grant in active_grants:
-        if remaining_to_spend <= 0:
-            break
-        grant_remaining = grant.remaining
-        if grant_remaining <= 0:
-            continue
-        deduct = min(grant_remaining, remaining_to_spend)
-        allocations_to_create.append(
-            CreditAllocation(spend=spend, grant=grant, amount=deduct)
-        )
-        remaining_to_spend -= deduct
+        for grant in active_grants:
+            if remaining_to_spend <= 0:
+                break
+            grant_remaining = grant.remaining
+            if grant_remaining <= 0:
+                continue
+            deduct = min(grant_remaining, remaining_to_spend)
+            allocations_to_create.append(
+                CreditAllocation(spend=spend, grant=grant, amount=deduct)
+            )
+            remaining_to_spend -= deduct
 
-    CreditAllocation.objects.bulk_create(allocations_to_create)
+        CreditAllocation.objects.bulk_create(allocations_to_create)
+
     return True

@@ -33,7 +33,7 @@
 
             <!-- ─── Sticky header ─────────────────────────────────────── -->
             <header class="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-zinc-200 bg-white/80 px-4 backdrop-blur-md sm:px-6"
-                    x-data="appHeader({ projectId: {% if current_project %}{{ current_project.pk }}{% else %}null{% endif %}, isScraping: {% if current_project and current_project.brand.processing_status == 'scraping' %}true{% else %}false{% endif %}, isImporting: {% if current_project and current_project.product_import_in_progress %}true{% else %}false{% endif %} })"
+                    x-data="appHeader({ projectId: {% if current_project %}{{ current_project.pk }}{% else %}null{% endif %}, isScraping: {% if current_project and current_project.brand.processing_status == 'scraping' %}true{% else %}false{% endif %}, isImporting: {% if current_project and current_project.product_import_in_progress %}true{% else %}false{% endif %}, credits: {{ user_credits|default:0 }} })"
             >
 
                 <!-- Mobile sidebar toggle -->
@@ -59,7 +59,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="size-3.5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
-                        {{ user_credits }} credit{{ user_credits|pluralize }}
+                        <span x-text="credits + ' credit' + (credits === 1 ? '' : 's')">{{ user_credits }} credit{{ user_credits|pluralize }}</span>
                     </a>
                     {% endif %}
 
