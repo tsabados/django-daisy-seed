@@ -34,8 +34,7 @@ def _accept_layer_response():
 @login_required
 def catalog(request):
     groups = MediaGroup.objects.filter(project=request.project).prefetch_related('media_items')
-    group_types = MediaGroup.GroupType.choices
-    return render(request, 'media_library/catalog.html', {'groups': groups, 'group_types': group_types})
+    return render(request, 'media_library/catalog.html', {'groups': groups})
 
 
 

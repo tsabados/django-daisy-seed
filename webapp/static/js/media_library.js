@@ -422,11 +422,8 @@ document.addEventListener('alpine:init', () => {
 
   Alpine.data('catalog', () => ({
     search: '',
-    activeType: 'all',
 
     visible(el) {
-      const typeMatch = this.activeType === 'all' || el.dataset.type === this.activeType;
-      if (!typeMatch) return false;
       if (!this.search) return true;
       const q = this.search.toLowerCase();
       return (el.dataset.title || '').includes(q) || (el.dataset.desc || '').includes(q);

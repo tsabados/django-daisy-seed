@@ -13,7 +13,7 @@
         {# ── Fixed header ── #}
         <div class="px-6 pt-6 pb-2 flex-shrink-0">
             <h2 class="text-xl font-bold">
-                {% if is_edit %}Edit Media Group{% else %}New Media Group{% endif %}
+                {% if is_edit %}Edit Product{% else %}New Product{% endif %}
             </h2>
         </div>
 
@@ -248,7 +248,7 @@
         <div class="flex justify-end gap-2 px-6 py-4 border-t border-base-200 flex-shrink-0">
             <button type="button" class="btn btn-ghost" up-dismiss>Cancel</button>
             <button type="submit" class="btn btn-primary">
-                {% if is_edit %}Save Changes{% else %}Create Group{% endif %}
+                {% if is_edit %}Save Changes{% else %}Create Product{% endif %}
             </button>
         </div>
 
