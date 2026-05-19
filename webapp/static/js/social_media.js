@@ -226,11 +226,23 @@ document.addEventListener('alpine:init', () => {
         if (event.value.mediaIds) this.pickerAccepted(event.value);
       };
       document.addEventListener('up:layer:accepted', this._pickerHandler);
+
+      // Intercept any dismiss attempt (Close button, backdrop, Escape) on this layer
+      this._ownLayer = up.layer.current;
+      this._dismissConfirmed = false;
+      this._dismissListener = (event) => {
+        if (this.isDirty && !this._dismissConfirmed) {
+          event.preventDefault();
+          this._showConfirmDialog();
+        }
+      };
+      this._ownLayer.on('up:layer:dismiss', this._dismissListener);
     },
 
     destroy() {
       document.removeEventListener('up:layer:accepted', this._pickerHandler);
       document.removeEventListener('post-changed', this._postChangedHandler);
+      if (this._ownLayer) this._ownLayer.off('up:layer:dismiss', this._dismissListener);
       if (this._generationSseCleanup) this._generationSseCleanup();
       if (this._topicSseCleanup) this._topicSseCleanup();
       const postForm = document.getElementById('post-form');
@@ -242,13 +254,32 @@ document.addEventListener('alpine:init', () => {
 
     // ── Cancel with dirty check ───────────────────────────────────────────
 
-    confirmCancel() {
-      if (this.isDirty) {
-        if (!confirm('You have unsaved changes. Are you sure you want to cancel?')) {
-          return;
-        }
-      }
-      up.layer.dismiss();
+    _showConfirmDialog() {
+      up.layer.open({
+        mode: 'modal',
+        size: 'small',
+        content: `
+          <div class="p-6 text-center">
+            <h3 class="text-lg font-semibold text-zinc-900 mb-2">Unsaved Changes</h3>
+            <p class="text-sm text-zinc-600 mb-5">You have unsaved changes. Do you want to save before leaving?</p>
+            <div class="flex items-center justify-center gap-3">
+              <button up-accept='{"action": "save"}' class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Save</button>
+              <button up-accept='{"action": "discard"}' class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500">Discard Changes</button>
+            </div>
+          </div>
+        `,
+        onAccepted: async (event) => {
+          if (event.value?.action === 'save') {
+            await this.savePost(true);
+          } else if (event.value?.action === 'discard') {
+            this._dismissConfirmed = true;
+            this._ownLayer.dismiss();
+          }
+        },
+        onDismissed: () => {
+          // User dismissed the confirm modal (backdrop/escape) — do nothing
+        },
+      });
     },
 
     openPublishPanel() {
@@ -505,13 +536,21 @@ document.addEventListener('alpine:init', () => {
     async generatePost() {
       if (this.generating) return;
       this.generating = true;
-      this.generationStep = this.mediaType === 'video' ? 'Generating video script…' : 'Generating your post…';
       try {
         await this.savePost(false, 'generate');
+        this.generationStep = this.mediaType === 'video' ? 'Generating video script…' : 'Generating your post…';
       } catch (e) {
-        console.error('Failed to generate post:', e);
         this.generating = false;
-        this.generationStep = '';
+        console.error('Failed to generate post:', e);
+        let msg = e.message || 'Generation failed';
+        if (e.status === 402 && e.data?.credits_required) {
+          msg = `Not enough credits. This action requires ${e.data.credits_required} credit(s).`;
+        }
+        up.layer.open({
+          content: `<div class="p-6 text-center"><h2 class="text-lg font-semibold text-red-700 mb-2">Insufficient Credits</h2><p class="text-sm text-zinc-600 mb-4">${msg}</p><a href="/credits/pricing/" class="inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-500">Buy Credits</a></div>`,
+          mode: 'modal',
+          size: 'small',
+        });
       }
     },
 
@@ -845,8 +884,10 @@ document.addEventListener('alpine:init', () => {
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({}));
           if (errData.error) console.error('Save failed:', errData.error);
-          throw new Error(errData.error || 'Failed to save post');
-          return false;
+          const err = new Error(errData.error || 'Failed to save post');
+          err.status = resp.status;
+          err.data = errData;
+          throw err;
         }
 
         const data = await resp.json();
