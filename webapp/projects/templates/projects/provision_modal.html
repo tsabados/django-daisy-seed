@@ -20,6 +20,7 @@
           novalidate>
         {% csrf_token %}
         <input type="hidden" name="project_id" value="{{ project.pk }}">
+        <input type="hidden" name="timezone" x-init="$el.value = Intl.DateTimeFormat().resolvedOptions().timeZone">
 
         <div class="form-control w-full mb-4">
             <label class="label" for="id_name">

@@ -55,6 +55,7 @@
 
             <form id="onboarding-form" method="post" action="{% url 'brand:brand_onboarding' %}" novalidate>
                 {% csrf_token %}
+                <input type="hidden" name="timezone" id="id_timezone">
 
                 <div id="url-field" class="mb-4">
                     <label for="id_domain" class="mb-1 block text-sm font-medium text-zinc-700">Website URL</label>
@@ -81,7 +82,7 @@
 
                 <div id="form-actions">
                     <button type="submit" class="btn btn-primary btn-block mt-2 rounded-lg text-sm"
-                            onclick="document.getElementById('scrape-spinner').style.display='flex';document.getElementById('form-actions').style.display='none';document.getElementById('url-field').style.display='none';document.getElementById('language-field').style.display='none'">
+                            onclick="document.getElementById('id_timezone').value=Intl.DateTimeFormat().resolvedOptions().timeZone;document.getElementById('scrape-spinner').style.display='flex';document.getElementById('form-actions').style.display='none';document.getElementById('url-field').style.display='none';document.getElementById('language-field').style.display='none'">
                         Set up my project
                     </button>
                 </div>
