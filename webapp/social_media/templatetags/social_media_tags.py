@@ -7,6 +7,14 @@ import html as _html
 
 register = template.Library()
 
+PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin']
+
+
+@register.filter
+def sort_platforms(platforms):
+    """Sort a queryset/list of platform variants by the preferred display order."""
+    return sorted(platforms, key=lambda p: PLATFORM_ORDER.index(p.platform) if p.platform in PLATFORM_ORDER else len(PLATFORM_ORDER))
+
 
 @register.filter
 def get_item(dictionary, key):

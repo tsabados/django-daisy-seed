@@ -86,11 +86,11 @@ def scheduler_events(request):
             thumbnail = first_media.media.url
             is_video = first_media.media.is_video
 
-        enabled_platforms = [
-            p.platform
-            for p in post.platforms.all()
-            if p.is_enabled
-        ]
+        platform_order = ['instagram', 'facebook', 'linkedin']
+        enabled_platforms = sorted(
+            [p.platform for p in post.platforms.all() if p.is_enabled],
+            key=lambda p: platform_order.index(p) if p in platform_order else len(platform_order),
+        )
 
         events.append({
             'id': post.pk,

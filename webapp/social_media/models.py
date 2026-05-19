@@ -9,6 +9,8 @@ PLATFORM_CHOICES = [
     ('instagram', 'Instagram'),
 ]
 
+PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin']
+
 PLATFORM_CHAR_LIMITS = {
     'linkedin': 3000,
     'facebook': 63206,
