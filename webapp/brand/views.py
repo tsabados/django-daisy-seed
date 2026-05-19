@@ -12,19 +12,9 @@ from django.views.decorators.http import require_POST
 from media_library.models import Media, MediaGroup
 from media_library.views import _detect_and_import_products, _import_url_media
 
+from core.utils import save_timezone_from_request
 from .forms import BrandForm, ScrapeURLForm
 from .models import Brand
-
-
-# ── Timezone helper ─────────────────────────────────────────────────────────
-
-def _save_timezone_from_request(request):
-    """Read the 'timezone' POST field and save it to the current project if valid."""
-    import zoneinfo
-    tz = request.POST.get('timezone', '').strip()
-    if tz and tz in zoneinfo.available_timezones():
-        request.project.timezone = tz
-        request.project.save(update_fields=['timezone'])
 
 
 # ── Unpoly modal helper ─────────────────────────────────────────────────────
@@ -313,7 +303,7 @@ def brand_scrape_modal(request):
                     'already_scraping': True,
                 })
             url = form.cleaned_data['url']
-            _save_timezone_from_request(request)
+            save_timezone_from_request(request)
             Brand.objects.filter(pk=brand.pk).update(
                 processing_status=Brand.ProcessingStatus.SCRAPING,
                 scrape_error='',
@@ -361,7 +351,7 @@ def brand_onboarding(request):
                 domain_name = parsed.netloc or parsed.path
                 domain_name = domain_name.removeprefix('www.')
                 project.name = domain_name
-            _save_timezone_from_request(request)
+            save_timezone_from_request(request)
             project.save()
 
             # Start brand scrape task

@@ -166,10 +166,8 @@ def project_provision(request):
                 domain_name = parsed.netloc or parsed.path
                 domain_name = domain_name.removeprefix('www.')
                 project.name = domain_name
-            import zoneinfo
-            tz = request.POST.get('timezone', '').strip()
-            if tz and tz in zoneinfo.available_timezones():
-                project.timezone = tz
+            from core.utils import save_timezone_from_request
+            save_timezone_from_request(request)
             project.save()
 
             # Start brand scrape task
