@@ -34,11 +34,15 @@ def home(request):
     week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
     week_end = week_start + timezone.timedelta(days=7)
 
-    drafts = (
+    drafts = list(
         SocialMediaPost.objects.filter(project=request.project, status='draft')
         .prefetch_related('shared_media__media')
         .order_by('-updated_at')[:4]
     )
+    for post in drafts:
+        all_media = list(post.shared_media.all())
+        post.preview_media = all_media[:3]
+        post.extra_media_count = max(0, len(all_media) - 3)
 
     scheduled_posts = (
         SocialMediaPost.objects.filter(

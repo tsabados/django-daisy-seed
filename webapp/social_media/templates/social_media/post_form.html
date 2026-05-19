@@ -774,7 +774,7 @@
             </div>
             {% else %}
             <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-                No platforms enabled. Go to <a href="/settings" class="underline">Settings</a> to enable platforms.
+                No platforms enabled. Go to <a href="{% url 'projects:project_settings' %}" class="underline">Settings</a> to enable platforms.
             </div>
             {% endif %}
         </div>

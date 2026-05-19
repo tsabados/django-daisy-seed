@@ -98,7 +98,7 @@
                         {% endif %}
                     </div>
                     {# AI Edit button #}
-                    {% if media_form.instance.pk and media_form.instance.url %}
+                    {% if media_form.instance.pk and media_form.instance.url and not media_form.instance.is_video %}
                     <a href="{% url 'media_library:media_editor_modal' %}?media={{ media_form.instance.pk }}"
                        up-layer="new"
                        up-mode="modal"
@@ -173,7 +173,7 @@
                             {% endif %}
                         </div>
                         {# AI Edit button #}
-                        {% if media_form.instance.url %}
+                        {% if media_form.instance.url and not media_form.instance.is_video %}
                         <a href="{% url 'media_library:media_editor_modal' %}?media={{ media_form.instance.pk }}"
                            up-layer="new"
                            up-mode="modal"
