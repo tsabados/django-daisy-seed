@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from core.utils import ensure_aware_in_project_tz, to_project_isoformat
 from social_media.models import (
     PLATFORM_CHOICES,
     STATUS_CHOICES,
@@ -77,6 +78,8 @@ def scheduler_events(request):
 
     qs = qs.distinct().prefetch_related('shared_media__media', 'platforms')
 
+    qs = qs.distinct().prefetch_related('shared_media__media', 'platforms')
+
     events = []
     for post in qs:
         first_media = post.shared_media.first()
@@ -95,7 +98,7 @@ def scheduler_events(request):
         events.append({
             'id': post.pk,
             'title': post.title,
-            'start': post.scheduled_at.isoformat(),
+            'start': to_project_isoformat(post.scheduled_at, request.project),
             'extendedProps': {
                 'status': post.status,
                 'processingStatus': post.processing_status,
@@ -136,7 +139,7 @@ def scheduler_event_detail(request, pk):
     return JsonResponse({
         'id': post.pk,
         'title': post.title,
-        'start': post.scheduled_at.isoformat(),
+        'start': to_project_isoformat(post.scheduled_at, request.project),
         'extendedProps': {
             'status': post.status,
             'processingStatus': post.processing_status,
@@ -161,10 +164,7 @@ def scheduler_reschedule(request, pk):
             return JsonResponse({'error': 'Missing scheduled_at'}, status=400)
 
         new_dt = datetime.fromisoformat(new_dt_str)
-        if timezone.is_naive(new_dt):
-            import zoneinfo
-            project_tz = zoneinfo.ZoneInfo(post.project.timezone)
-            new_dt = timezone.make_aware(new_dt, project_tz)
+        new_dt = ensure_aware_in_project_tz(new_dt, post.project)
 
         if new_dt < timezone.now():
             return JsonResponse({'error': 'Cannot schedule in the past'}, status=400)

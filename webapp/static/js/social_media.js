@@ -983,13 +983,10 @@ document.addEventListener('alpine:init', () => {
     init() {
       this.postId        = this.$el.dataset.postId;
       this.postStatus    = this.$el.dataset.postStatus || '';
-      // data-scheduled-at is a UTC ISO string (with +00:00 offset); convert to local
-      // time for the datetime-local input which always works in browser-local time.
-      const rawScheduledAt = this.$el.dataset.scheduledAt || '';
-      if (rawScheduledAt) {
-        const d = new Date(rawScheduledAt);
-        this.scheduledAt = isNaN(d.getTime()) ? rawScheduledAt : toLocalISOString(d);
-      }
+      this._projectTimezone = this.$el.dataset.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      // data-scheduled-at is already in project timezone (YYYY-MM-DDTHH:MM),
+      // ready for the datetime-local input.
+      this.scheduledAt = this.$el.dataset.scheduledAt || '';
       this.publishUrl          = this.$el.dataset.publishUrl;
       this.scheduleUrl         = this.$el.dataset.scheduleUrl;
       this.unscheduleUrl       = this.$el.dataset.unscheduleUrl;
@@ -1032,7 +1029,7 @@ document.addEventListener('alpine:init', () => {
     minDatetime() {
       const now = new Date();
       now.setMinutes(now.getMinutes() + 1);
-      return toLocalISOString(now);
+      return toTimezoneISOString(now, this._projectTimezone);
     },
 
     formatScheduledAt(iso) {
@@ -1087,10 +1084,6 @@ document.addEventListener('alpine:init', () => {
         this.scheduleError = 'Invalid date format.';
         return;
       }
-      if (dt <= new Date()) {
-        this.scheduleError = 'Scheduled time must be in the future.';
-        return;
-      }
 
       const validationErrs = await this._validateViaComposer();
       if (validationErrs.length > 0) {
@@ -1103,8 +1096,9 @@ document.addEventListener('alpine:init', () => {
       const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
         || document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
       try {
-        // dt is a local-time Date (parsed from the datetime-local input); send as UTC ISO.
-        const body = new URLSearchParams({ scheduled_at: dt.toISOString() });
+        // scheduledAt is a datetime-local string representing project timezone;
+        // send as-is so the server interprets it in the project timezone.
+        const body = new URLSearchParams({ scheduled_at: this.scheduledAt });
         const resp = await fetch(this.scheduleUrl, {
           method: 'POST',
           headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1232,10 +1226,9 @@ document.addEventListener('alpine:init', () => {
       try {
         const body = new URLSearchParams();
         if (val) {
-          const dt = new Date(val);
-          if (!isNaN(dt.getTime())) {
-            body.set('scheduled_at', dt.toISOString());
-          }
+          // val is a datetime-local string representing project timezone time;
+          // send it as-is and let the server interpret it as project timezone (naive fallback).
+          body.set('scheduled_at', val);
         }
         const resp = await fetch(this.saveScheduledAtUrl, {
           method: 'POST',
@@ -1277,6 +1270,20 @@ function toLocalISOString(date) {
   const pad = n => String(n).padStart(2, '0');
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
     + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+
+/**
+ * Convert a Date object to an ISO string in a specific IANA timezone,
+ * suitable for datetime-local inputs. Returns "YYYY-MM-DDTHH:mm".
+ */
+function toTimezoneISOString(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(date);
+  const get = type => (parts.find(p => p.type === type) || {}).value || '';
+  return get('year') + '-' + get('month') + '-' + get('day') + 'T' + get('hour') + ':' + get('minute');
 }
 
 function formatScheduledAt(iso) {

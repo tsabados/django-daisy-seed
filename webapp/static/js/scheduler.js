@@ -24,6 +24,11 @@ function schedulerApp() {
                     center: 'title',
                     right: 'dayGridMonth,timeGridWeek,timeGridDay',
                 },
+                eventTimeFormat: {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                },
                 buttonText: {
                     today: 'Today',
                     month: 'Month',

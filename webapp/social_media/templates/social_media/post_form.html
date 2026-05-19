@@ -6,7 +6,7 @@
       data-post-id="{{ post.pk }}"
       data-post-status="{{ post.status }}"
       data-processing-status="{{ post.processing_status }}"
-      data-scheduled-at="{{ post.scheduled_at|date:'c'|default:'' }}"
+      data-scheduled-at="{{ scheduled_at_local }}"
       data-unschedule-url="{% url 'social_media:post_unschedule' post.pk %}"
       data-media-type="{{ post.media_type|default:'image' }}"
       data-video-type="{{ post.video_type|default:'teaser' }}"

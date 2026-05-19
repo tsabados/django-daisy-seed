@@ -11,6 +11,7 @@ from credits.constants import IMAGE_GENERATION_COST, VIDEO_GENERATION_COST
 from credits.models import available_credits
 
 from brand.models import Brand
+from core.utils import ensure_aware_in_project_tz, to_project_localtime
 from integrations.models import IntegrationConnection
 from media_library.models import Media
 from services.ai_services import edit_text
@@ -82,7 +83,8 @@ def post_form(request, pk=None):
         ]
         has_content = bool(post.shared_text.strip()) or bool(selected_shared_media)
         initial_mode = 'ai' if not has_content else 'editor'
-        extra_ctx = {'post': post, 'is_edit': True, 'initial_mode': initial_mode}
+        scheduled_at_local = to_project_localtime(post.scheduled_at, request.project)
+        extra_ctx = {'post': post, 'is_edit': True, 'initial_mode': initial_mode, 'scheduled_at_local': scheduled_at_local}
     else:
         post = None
         form = SocialMediaPostForm()
@@ -242,10 +244,10 @@ def _assign_default_scheduled_at(post, project):
     """Assign a default scheduled_at if none provided (next day at project default publish time)."""
     from django.utils import timezone
     import datetime
-    import zoneinfo
 
+    from core.utils import get_project_tz
     publish_time = project.default_publish_time
-    project_tz = zoneinfo.ZoneInfo(project.timezone)
+    project_tz = get_project_tz(project)
     latest = (
         SocialMediaPost.objects.filter(project=project)
         .exclude(scheduled_at=None)
@@ -370,10 +372,12 @@ def post_save(request):
         if err:
             return err
 
+    scheduled_at_local = to_project_localtime(post.scheduled_at, request.project)
+
     return JsonResponse({
         'post_id': post.pk,
         'status': post.status,
-        'scheduled_at': post.scheduled_at.isoformat() if post.scheduled_at else '',
+        'scheduled_at': scheduled_at_local,
     })
 
 
@@ -483,10 +487,7 @@ def post_schedule(request, pk):
         return JsonResponse({'error': 'Please enter a date and time.'}, status=400)
     try:
         scheduled_at = dt_class.fromisoformat(scheduled_at_str)
-        if timezone.is_naive(scheduled_at):
-            import zoneinfo
-            project_tz = zoneinfo.ZoneInfo(post.project.timezone)
-            scheduled_at = timezone.make_aware(scheduled_at, project_tz)
+        scheduled_at = ensure_aware_in_project_tz(scheduled_at, post.project)
         if scheduled_at <= timezone.now():
             return JsonResponse({'error': 'Scheduled time must be in the future.'}, status=400)
 
@@ -499,7 +500,7 @@ def post_schedule(request, pk):
         post.save(update_fields=['scheduled_at', 'status'])
         return JsonResponse({
             'status': 'scheduled',
-            'scheduled_at': post.scheduled_at.isoformat(),
+            'scheduled_at': to_project_localtime(post.scheduled_at, post.project),
         })
     except ValueError:
         return JsonResponse({'error': 'Invalid date/time format.'}, status=400)
@@ -517,16 +518,13 @@ def post_save_scheduled_at(request, pk):
     if not scheduled_at_str:
         post.scheduled_at = None
         post.save(update_fields=['scheduled_at'])
-        return JsonResponse({'saved': True, 'scheduled_at': None})
+        return JsonResponse({'saved': True, 'scheduled_at': ''})
     try:
         scheduled_at = dt_class.fromisoformat(scheduled_at_str)
-        if timezone.is_naive(scheduled_at):
-            import zoneinfo
-            project_tz = zoneinfo.ZoneInfo(post.project.timezone)
-            scheduled_at = timezone.make_aware(scheduled_at, project_tz)
+        scheduled_at = ensure_aware_in_project_tz(scheduled_at, post.project)
         post.scheduled_at = scheduled_at
         post.save(update_fields=['scheduled_at'])
-        return JsonResponse({'saved': True, 'scheduled_at': post.scheduled_at.isoformat()})
+        return JsonResponse({'saved': True, 'scheduled_at': to_project_localtime(post.scheduled_at, post.project)})
     except ValueError:
         return JsonResponse({'error': 'Invalid date/time format.'}, status=400)
 
@@ -541,10 +539,13 @@ def post_publish_panel(request, pk):
         provider_category=IntegrationConnection.ProviderCategory.SOCIAL_MEDIA,
         status=IntegrationConnection.ConnectionStatus.ACTIVE,
     ).exists()
+
     return render(request, 'social_media/post_publish_panel.html', {
         'post': post,
         'platforms': platforms,
         'has_integrations': has_integrations,
+        'project_timezone': request.project.timezone,
+        'scheduled_at_local': to_project_localtime(post.scheduled_at, request.project),
     })
 
 
