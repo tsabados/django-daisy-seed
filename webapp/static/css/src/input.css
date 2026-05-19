@@ -258,6 +258,12 @@ textarea {
   line-height: 1.25rem;
 }
 
+.scheduler-platform-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+
 /* ── Mobile: compact dot/thumbnail events ─────────────────── */
 @media (max-width: 639px) {
   .scheduler-event-header,
