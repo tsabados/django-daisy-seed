@@ -51,6 +51,11 @@ document.addEventListener('alpine:init', () => {
     // ── Dirty state ───────────────────────────────────────────────────────
     isDirty: false,
 
+    // ── Platform management state ─────────────────────────────────────────
+    allPlatforms: [],       // all platforms initially available
+    activePlatforms: [],    // platforms currently shown (subset of allPlatforms)
+    showAddPlatformDropdown: false,
+
     // ── Publish / status state ────────────────────────────────────────────
     postStatus: '',       // mirrors server-side post.status
     scheduledAt: '',      // ISO string of scheduled_at, empty when not scheduled
@@ -168,6 +173,18 @@ document.addEventListener('alpine:init', () => {
         }));
       }
 
+      // Load enabled platforms for add/remove tab functionality
+      const enabledPlatformsEl = document.getElementById('all-platforms-json');
+      if (enabledPlatformsEl) {
+        this.allPlatforms = JSON.parse(enabledPlatformsEl.textContent);
+      }
+      const activePlatformsEl = document.getElementById('active-platforms-json');
+      if (activePlatformsEl) {
+        this.activePlatforms = JSON.parse(activePlatformsEl.textContent);
+      } else {
+        this.activePlatforms = [...this.allPlatforms];
+      }
+
       // Apply prefill from query params (used by inspiration cards)
       const prefillTopicEl = document.getElementById('prefill-topic-json');
       if (prefillTopicEl) {
@@ -261,7 +278,28 @@ document.addEventListener('alpine:init', () => {
     // ── Tab management ────────────────────────────────────────────────────
 
     activateTab(tab) {
+      if (tab !== 'all' && !this.activePlatforms.includes(tab)) return;
       this.activeTab = tab;
+    },
+
+    // ── Platform add / remove ─────────────────────────────────────────────
+
+    removePlatform(platform) {
+      this.activePlatforms = this.activePlatforms.filter(p => p !== platform);
+      if (this.activeTab === platform) {
+        this.activeTab = 'all';
+      }
+      this.isDirty = true;
+    },
+
+    addPlatform(platform) {
+      // Re-insert in the correct order according to allPlatforms
+      this.activePlatforms = this.allPlatforms.filter(p =>
+        this.activePlatforms.includes(p) || p === platform
+      );
+      this.showAddPlatformDropdown = false;
+      this.activeTab = platform;
+      this.isDirty = true;
     },
 
     // ── Preview ───────────────────────────────────────────────────────────
@@ -690,6 +728,7 @@ document.addEventListener('alpine:init', () => {
       const errors = [];
       this.$root.querySelectorAll('[id^="panel-"]:not(#panel-all)').forEach(panel => {
         const platform = panel.id.replace('panel-', '');
+        if (!this.activePlatforms.includes(platform)) return;
         const label = PLATFORM_LABELS[platform] || platform;
 
         const media = this.overrideMediaShown[platform]
@@ -761,6 +800,7 @@ document.addEventListener('alpine:init', () => {
         const platforms = [];
         this.$root.querySelectorAll('[id^="panel-"]:not(#panel-all)').forEach(panel => {
           const platform = panel.id.replace('panel-', '');
+          if (!this.activePlatforms.includes(platform)) return;
           platforms.push({
             platform,
             use_shared_text: !this.overrideTextShown[platform],

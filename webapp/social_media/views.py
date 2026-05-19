@@ -17,6 +17,7 @@ from services.ai_services import edit_text
 from .forms import SocialMediaPostForm
 from .models import (
     PLATFORM_CHOICES,
+    PLATFORM_ORDER,
     SocialMediaPost,
     SocialMediaPostMedia,
     SocialMediaPostPlatform,
@@ -46,19 +47,24 @@ def post_list(request):
 def post_form(request, pk=None):
     user_media = Media.objects.filter(media_group__project=request.project).select_related('media_group')
 
+    # All project-enabled platforms in canonical PLATFORM_ORDER
+    project_platforms_set = set(request.project.get_enabled_platforms())
+    all_project_platforms = [p for p in PLATFORM_ORDER if p in project_platforms_set]
+
     if pk:
         post = get_object_or_404(SocialMediaPost, pk=pk, project=request.project)
         form = SocialMediaPostForm(instance=post)
         platform_variants = list(post.platforms.all())
-        enabled_platforms = [pv.platform for pv in platform_variants]
+        active_platforms = [p for p in PLATFORM_ORDER if any(pv.platform == p for pv in platform_variants)]
+        pv_map = {pv.platform: pv for pv in platform_variants}
         platforms_data = [
             {
-                'platform': pv.platform,
-                'use_shared_text': pv.use_shared_text,
-                'override_text': pv.override_text or '',
-                'use_shared_media': pv.use_shared_media,
+                'platform': p,
+                'use_shared_text': pv_map[p].use_shared_text if p in pv_map else True,
+                'override_text': pv_map[p].override_text or '' if p in pv_map else '',
+                'use_shared_media': pv_map[p].use_shared_media if p in pv_map else True,
             }
-            for pv in platform_variants
+            for p in all_project_platforms
         ]
         selected_shared_media = [
             {'media_id': m.id, 'media': m.media.id, 'url': m.media.url, 'is_video': m.media.is_video}
@@ -80,10 +86,10 @@ def post_form(request, pk=None):
     else:
         post = None
         form = SocialMediaPostForm()
-        enabled_platforms = request.project.get_enabled_platforms()
+        active_platforms = all_project_platforms
         platforms_data = [
             {'platform': p, 'use_shared_text': True, 'override_text': '', 'use_shared_media': True}
-            for p in enabled_platforms
+            for p in all_project_platforms
         ]
         selected_shared_media = []
         selected_platform_media = {}
@@ -105,12 +111,13 @@ def post_form(request, pk=None):
             'auto_suggest': request.GET.get('auto_suggest', '') == '1',
         }
 
-    platform_labels = {p: _get_platform_label(p) for p in enabled_platforms}
+    platform_labels = {p: _get_platform_label(p) for p in all_project_platforms}
 
     return render(request, 'social_media/post_form.html', {
         'form': form,
         'platforms_data': platforms_data,
-        'enabled_platforms': enabled_platforms,
+        'enabled_platforms': all_project_platforms,
+        'active_platforms': active_platforms,
         'platform_labels': platform_labels,
         'user_media': user_media,
         'selected_shared_media': selected_shared_media,
