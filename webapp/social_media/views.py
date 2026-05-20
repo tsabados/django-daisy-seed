@@ -58,6 +58,9 @@ def post_form(request, pk=None):
         platform_variants = list(post.platforms.all())
         active_platforms = [p for p in PLATFORM_ORDER if any(pv.platform == p for pv in platform_variants)]
         pv_map = {pv.platform: pv for pv in platform_variants}
+        # Include platforms with existing platform posts even if now disabled in project
+        existing_platform_set = {pv.platform for pv in platform_variants}
+        combined_platforms = [p for p in PLATFORM_ORDER if p in project_platforms_set or p in existing_platform_set]
         platforms_data = [
             {
                 'platform': p,
@@ -65,7 +68,7 @@ def post_form(request, pk=None):
                 'override_text': pv_map[p].override_text or '' if p in pv_map else '',
                 'use_shared_media': pv_map[p].use_shared_media if p in pv_map else True,
             }
-            for p in all_project_platforms
+            for p in combined_platforms
         ]
         selected_shared_media = [
             {'media_id': m.id, 'media': m.media.id, 'url': m.media.url, 'is_video': m.media.is_video}
@@ -113,12 +116,13 @@ def post_form(request, pk=None):
             'auto_suggest': request.GET.get('auto_suggest', '') == '1',
         }
 
-    platform_labels = {p: _get_platform_label(p) for p in all_project_platforms}
+    display_platforms = combined_platforms if pk else all_project_platforms
+    platform_labels = {p: _get_platform_label(p) for p in display_platforms}
 
     return render(request, 'social_media/post_form.html', {
         'form': form,
         'platforms_data': platforms_data,
-        'enabled_platforms': all_project_platforms,
+        'enabled_platforms': display_platforms,
         'active_platforms': active_platforms,
         'platform_labels': platform_labels,
         'user_media': user_media,
