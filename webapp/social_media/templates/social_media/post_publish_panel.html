@@ -1,13 +1,24 @@
 <main x-data="publishPanel()"
+      {% if post %}
       data-post-id="{{ post.pk }}"
       data-post-status="{{ post.status }}"
       data-scheduled-at="{{ scheduled_at_local }}"
-      data-timezone="{{ project_timezone }}"
       data-publish-url="{% url 'social_media:post_publish' post.pk %}"
       data-schedule-url="{% url 'social_media:post_schedule' post.pk %}"
       data-unschedule-url="{% url 'social_media:post_unschedule' post.pk %}"
       data-save-scheduled-at-url="{% url 'social_media:post_save_scheduled_at' post.pk %}"
-      data-panel-url="{% url 'social_media:post_publish_panel' post.pk %}">
+      data-panel-url="{% url 'social_media:post_publish_panel' post.pk %}"
+      {% else %}
+      data-post-id=""
+      data-post-status="draft"
+      data-scheduled-at=""
+      data-publish-url=""
+      data-schedule-url=""
+      data-unschedule-url=""
+      data-save-scheduled-at-url=""
+      data-panel-url=""
+      {% endif %}
+      data-timezone="{{ project_timezone }}">
   {% csrf_token %}
   <div class="w-full">
 
@@ -26,70 +37,6 @@
         <p class="text-sm font-semibold text-zinc-800">Publishing to platforms…</p>
         <p class="mt-1 text-xs text-zinc-400">Please wait, this may take a moment.</p>
       </div>
-    </div>
-
-    {# ── Results: after publish ── #}
-    <div x-show="view === 'results'" class="px-5 py-5 space-y-4">
-
-      {# Status summary #}
-      <div :class="{
-            'bg-emerald-50 border-emerald-200 text-emerald-800': postStatus === 'published',
-            'bg-red-50 border-red-200 text-red-800': postStatus === 'failed',
-            'bg-zinc-50 border-zinc-200 text-zinc-700': postStatus !== 'published' && postStatus !== 'failed'
-           }"
-           class="rounded-lg border px-4 py-3 flex items-center gap-2.5">
-        <template x-if="postStatus === 'published'">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-          </svg>
-        </template>
-        <template x-if="postStatus === 'failed'">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </template>
-        <p class="text-sm font-medium"
-           x-text="postStatus === 'published' ? 'Published successfully' : postStatus === 'failed' ? 'Some platforms failed' : 'Publish complete'">
-        </p>
-      </div>
-
-      {# Platform results #}
-      <ul class="space-y-2">
-        {% for pv in platforms %}
-          <li class="rounded-lg border px-3 py-2.5
-              {% if pv.published_at %}border-emerald-200 bg-emerald-50{% elif pv.publish_error %}border-red-200 bg-red-50{% else %}border-zinc-200 bg-white{% endif %}">
-            <div class="flex items-start justify-between gap-3">
-              <span class="text-sm font-medium text-zinc-800">{{ pv.get_platform_display }}</span>
-              {% if pv.published_at %}
-              <span class="text-xs text-emerald-700 whitespace-nowrap">✓ {{ pv.published_at|date:"M j, g:i A" }}</span>
-              {% elif pv.publish_error %}
-              <span class="text-xs text-red-600 whitespace-nowrap">✗ Failed</span>
-              {% else %}
-              <span class="text-xs text-zinc-400">Not published</span>
-              {% endif %}
-            </div>
-            {% if pv.publish_error %}
-            <p class="mt-1 text-xs text-red-600 leading-snug">{{ pv.publish_error }}</p>
-            {% endif %}
-            {% if pv.published_url %}
-            <a href="{{ pv.published_url }}"
-               target="_blank" rel="noopener noreferrer"
-               class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline">
-              View post
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-              </svg>
-            </a>
-            {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-
-      <button type="button"
-              @click="up.layer.dismiss()"
-              class="inline-flex w-full items-center justify-center rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-        Close
-      </button>
     </div>
 
     {# ── Options: schedule / publish ── #}
@@ -225,6 +172,65 @@
         </template>
       </div>
     </div>
+
+    {# ── Results: after publish ── #}
+    <div x-show="view === 'results'" class="px-5 py-5 space-y-4">
+
+      {# Status summary #}
+      <div :class="{
+            'bg-emerald-50 border-emerald-200 text-emerald-800': postStatus === 'published',
+            'bg-red-50 border-red-200 text-red-800': postStatus === 'failed',
+            'bg-zinc-50 border-zinc-200 text-zinc-700': postStatus !== 'published' && postStatus !== 'failed'
+           }"
+           class="rounded-lg border px-4 py-3 flex items-center gap-2.5">
+        <template x-if="postStatus === 'published'">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+          </svg>
+        </template>
+        <template x-if="postStatus === 'failed'">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </template>
+        <p class="text-sm font-medium"
+           x-text="postStatus === 'published' ? 'Published successfully' : postStatus === 'failed' ? 'Some platforms failed' : 'Publish complete'">
+        </p>
+      </div>
+
+      {# Platform results #}
+      <ul class="space-y-2">
+        {% for pv in platforms %}
+          <li class="rounded-lg border px-3 py-2.5
+              {% if pv.published_at %}border-emerald-200 bg-emerald-50{% elif pv.publish_error %}border-red-200 bg-red-50{% else %}border-zinc-200 bg-white{% endif %}">
+            <div class="flex items-start justify-between gap-3">
+              <span class="text-sm font-medium text-zinc-800">{{ pv.get_platform_display }}</span>
+              {% if pv.published_at_local %}
+              <span class="text-xs text-emerald-700 whitespace-nowrap">✓ {{ pv.published_at_local }}</span>
+              {% elif pv.publish_error %}
+              <span class="text-xs text-red-600 whitespace-nowrap">✗ Failed</span>
+              {% else %}
+              <span class="text-xs text-zinc-400">Not published</span>
+              {% endif %}
+            </div>
+            {% if pv.publish_error %}
+            <p class="mt-1 text-xs text-red-600 leading-snug">{{ pv.publish_error }}</p>
+            {% endif %}
+            {% if pv.published_url %}
+            <a href="{{ pv.published_url }}"
+               target="_blank" rel="noopener noreferrer"
+               class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline">
+              View post
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+            </a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
 
   </div>
 </main>

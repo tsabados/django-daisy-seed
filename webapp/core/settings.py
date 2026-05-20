@@ -346,6 +346,17 @@ AUTHLIB_OAUTH_CLIENTS = {
             'token_endpoint_auth_method': 'client_secret_post',
         },
     },
+    'tiktok': {
+        'client_id': os.environ.get('TIKTOK_CLIENT_KEY', ''),
+        'client_secret': os.environ.get('TIKTOK_CLIENT_SECRET', ''),
+        'access_token_url': 'https://open.tiktokapis.com/v2/oauth/token/',
+        'authorize_url': 'https://www.tiktok.com/v2/auth/authorize/',
+        'api_base_url': 'https://open.tiktokapis.com/v2/',
+        'client_kwargs': {
+            'scope': 'user.info.basic,video.upload,video.publish',
+            'token_endpoint_auth_method': 'client_secret_post',
+        },
+    },
 }
 
 # Dotted paths to provider classes loaded by the integrations registry
@@ -353,6 +364,7 @@ INTEGRATION_PROVIDERS = [
     'integrations.providers.facebook.FacebookProvider',
     'integrations.providers.instagram.InstagramProvider',
     'integrations.providers.linkedin.LinkedInProvider',
+    'integrations.providers.tiktok.TikTokProvider',
 ]
 
 # Media files (uploads)

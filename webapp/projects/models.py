@@ -21,6 +21,7 @@ class Project(models.Model):
     enable_linkedin = models.BooleanField(default=True)
     enable_facebook = models.BooleanField(default=True)
     enable_instagram = models.BooleanField(default=True)
+    enable_tiktok = models.BooleanField(default=True)
     product_import_in_progress = models.BooleanField(default=False)
     enable_autopost = models.BooleanField(default=True)
     default_publish_time = models.TimeField(default=datetime.time(9, 0))
@@ -42,4 +43,6 @@ class Project(models.Model):
             platforms.append('facebook')
         if self.enable_instagram:
             platforms.append('instagram')
+        if self.enable_tiktok:
+            platforms.append('tiktok')
         return platforms

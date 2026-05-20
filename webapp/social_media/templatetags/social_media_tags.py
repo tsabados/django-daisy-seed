@@ -7,7 +7,7 @@ import html as _html
 
 register = template.Library()
 
-PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin']
+PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin', 'tiktok']
 
 
 @register.filter

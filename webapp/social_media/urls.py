@@ -11,6 +11,7 @@ urlpatterns = [
     path('<int:pk>/edit/', views.post_form, name='post_form'),
     path('<int:pk>/delete/', views.post_delete, name='post_delete'),
     path('<int:pk>/publish/', views.post_publish, name='post_publish'),
+    path('publish-panel/', views.post_publish_panel, name='post_publish_panel_new'),
     path('<int:pk>/publish-panel/', views.post_publish_panel, name='post_publish_panel'),
     path('<int:pk>/card/', views.post_card, name='post_card'),
     path('<int:pk>/schedule/', views.post_schedule, name='post_schedule'),

@@ -283,9 +283,11 @@ document.addEventListener('alpine:init', () => {
     },
 
     openPublishPanel() {
-      if (!this.publishPanelUrl) return;
+      const url = this.postId
+        ? this.publishPanelUrl
+        : '/social-media/publish-panel/';
       up.layer.open({
-        url: this.publishPanelUrl,
+        url: url,
         mode: 'modal',
         size: 'small',
         cache: false,
@@ -1100,16 +1102,27 @@ document.addEventListener('alpine:init', () => {
       // Walk up the layer stack to find the postComposer Alpine component and save.
       try {
         const parentEl = this._ownLayer?.parent?.element;
-        if (!parentEl) return;
+        if (!parentEl) return null;
         const composerEl = parentEl.querySelector('[x-data]');
-        if (!composerEl) return;
+        if (!composerEl) return null;
         const composer = Alpine.$data(composerEl);
         if (composer && typeof composer.savePost === 'function') {
           await composer.savePost(false, 'draft');
+          // After save, update our URLs from the parent composer
+          if (!this.postId && composer.postId) {
+            this.postId = composer.postId;
+            this.publishUrl = composer.publishUrl;
+            this.scheduleUrl = `/social-media/${composer.postId}/schedule/`;
+            this.unscheduleUrl = composer.unscheduleUrl;
+            this.saveScheduledAtUrl = `/social-media/${composer.postId}/save-scheduled-at/`;
+            this.panelUrl = composer.publishPanelUrl;
+          }
+          return composer.postId;
         }
       } catch (e) {
         console.warn('publishPanel: could not save parent post', e);
       }
+      return null;
     },
 
     // ── Schedule ─────────────────────────────────────────────────────────
@@ -1134,6 +1147,11 @@ document.addEventListener('alpine:init', () => {
 
       this.scheduling = true;
       await this._saveParentPost();
+      if (!this.scheduleUrl) {
+        this.scheduleError = 'Failed to save post. Please try again.';
+        this.scheduling = false;
+        return;
+      }
       const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
         || document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
       try {
@@ -1185,7 +1203,7 @@ document.addEventListener('alpine:init', () => {
 
     // ── Publish Now ───────────────────────────────────────────────────────
     async publishNow() {
-      if (this.publishing || !this.publishUrl) return;
+      if (this.publishing) return;
       this.validationErrors = [];
 
       const validationErrs = await this._validateViaComposer();
@@ -1197,6 +1215,11 @@ document.addEventListener('alpine:init', () => {
       this.publishing = true;
       this.view = 'publishing';
       await this._saveParentPost();
+      if (!this.publishUrl) {
+        this.publishing = false;
+        this.view = 'options';
+        return;
+      }
       const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
         || document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
       try {

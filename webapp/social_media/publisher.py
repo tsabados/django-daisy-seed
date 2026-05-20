@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 LINKEDIN_API_BASE = 'https://api.linkedin.com'
 GRAPH_API_BASE = 'https://graph.facebook.com/v22.0'
 IG_GRAPH_BASE = 'https://graph.instagram.com/v25.0'
+TIKTOK_API_BASE = 'https://open.tiktokapis.com/v2'
 
 
 # ─── Media helpers ────────────────────────────────────────────────────────────
@@ -439,12 +440,173 @@ def publish_to_instagram(platform_variant, connection, base_url=''):
     return ''
 
 
+# ─── TikTok ───────────────────────────────────────────────────────────────────
+
+
+def publish_to_tiktok(platform_variant, connection, base_url=''):
+    """
+    Publish to TikTok using the Content Posting API.
+    Videos → Direct Post Video (PULL_FROM_URL or FILE_UPLOAD).
+    Photos → Direct Post Photo (PULL_FROM_URL).
+    """
+    access_token = connection.access_token
+    text = platform_variant.get_effective_text()
+    media = list(platform_variant.get_effective_media())
+
+    if not media:
+        raise ValueError('TikTok requires at least one video or photo to publish.')
+
+    auth_headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json; charset=UTF-8',
+    }
+
+    first_media = media[0].media
+
+    if first_media.is_video:
+        # Video post — always use FILE_UPLOAD
+        video_data, content_type = _get_media_bytes_and_type(first_media)
+        video_size = len(video_data)
+        chunk_size = min(video_size, 10_000_000)
+        total_chunk_count = (video_size + chunk_size - 1) // chunk_size
+
+        payload = {
+            'post_info': {
+                'title': text[:2200] if text else '',
+                'privacy_level': 'SELF_ONLY',
+                'disable_duet': False,
+                'disable_comment': False,
+                'disable_stitch': False,
+            },
+            'source_info': {
+                'source': 'FILE_UPLOAD',
+                'video_size': video_size,
+                'chunk_size': chunk_size,
+                'total_chunk_count': total_chunk_count,
+            },
+        }
+        resp = http_requests.post(
+            f'{TIKTOK_API_BASE}/post/publish/video/init/',
+            headers=auth_headers,
+            json=payload,
+            timeout=30,
+        )
+        if not resp.ok:
+            raise RuntimeError(f'TikTok video init failed ({resp.status_code}): {resp.text}')
+        resp_data = resp.json()
+        publish_id = resp_data.get('data', {}).get('publish_id', '')
+        upload_url = resp_data.get('data', {}).get('upload_url', '')
+
+        # Upload the video in chunks
+        for i in range(total_chunk_count):
+            start = i * chunk_size
+            end = min(start + chunk_size, video_size)
+            chunk = video_data[start:end]
+            put_resp = http_requests.put(
+                upload_url,
+                headers={
+                    'Content-Range': f'bytes {start}-{end - 1}/{video_size}',
+                    'Content-Type': 'video/mp4',
+                },
+                data=chunk,
+                timeout=120,
+            )
+            if not put_resp.ok:
+                raise RuntimeError(
+                    f'TikTok video chunk upload failed ({put_resp.status_code}): {put_resp.text}'
+                )
+
+        # Poll for publish status and get the video ID
+        video_id = _wait_for_tiktok_publish(publish_id, access_token)
+        if video_id:
+            username = connection.metadata.get('username', '')
+            if username:
+                return f'https://www.tiktok.com/@{username}/video/{video_id}'
+        return ''
+
+    else:
+        # Photo post — use PULL_FROM_URL with photo_images
+        photo_urls = []
+        for m in media[:35]:  # TikTok allows up to 35 photos
+            url = _get_absolute_media_url(m.media, base_url)
+            if url.startswith(('http://', 'https://')):
+                photo_urls.append(url)
+
+        if not photo_urls:
+            raise ValueError('TikTok photo posts require publicly accessible image URLs.')
+
+        payload = {
+            'post_info': {
+                'title': text[:2200] if text else '',
+                'description': text[:2200] if text else '',
+                'disable_comment': False,
+                'privacy_level': 'SELF_ONLY',
+                'auto_add_music': True,
+            },
+            'source_info': {
+                'source': 'PULL_FROM_URL',
+                'photo_cover_index': 0,
+                'photo_images': photo_urls,
+            },
+            'post_mode': 'DIRECT_POST',
+            'media_type': 'PHOTO',
+        }
+        resp = http_requests.post(
+            f'{TIKTOK_API_BASE}/post/publish/content/init/',
+            headers=auth_headers,
+            json=payload,
+            timeout=30,
+        )
+        if not resp.ok:
+            raise RuntimeError(f'TikTok photo post failed ({resp.status_code}): {resp.text}')
+        resp_data = resp.json()
+        publish_id = resp_data.get('data', {}).get('publish_id', '')
+
+        video_id = _wait_for_tiktok_publish(publish_id, access_token)
+        if video_id:
+            username = connection.metadata.get('username', '')
+            if username:
+                return f'https://www.tiktok.com/@{username}/video/{video_id}'
+        return ''
+
+
+def _wait_for_tiktok_publish(publish_id, access_token, timeout=120, interval=5):
+    """Poll TikTok publish status until completion or timeout. Returns the video_id if available."""
+    if not publish_id:
+        return None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        resp = http_requests.post(
+            f'{TIKTOK_API_BASE}/post/publish/status/fetch/',
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json; charset=UTF-8',
+            },
+            json={'publish_id': publish_id},
+            timeout=15,
+        )
+        if not resp.ok:
+            continue
+        data = resp.json()
+        status = data.get('data', {}).get('status', '')
+        if status == 'PUBLISH_COMPLETE':
+            # Extract the video ID from publicaly_available_post_id list
+            post_ids = data.get('data', {}).get('publicaly_available_post_id', [])
+            return post_ids[0] if post_ids else None
+        if status in ('FAILED', 'PUBLISH_FAILED'):
+            fail_reason = data.get('data', {}).get('fail_reason', 'Unknown error')
+            raise RuntimeError(f'TikTok publish failed: {fail_reason}')
+    raise RuntimeError(f'TikTok publish did not complete within {timeout}s (publish_id={publish_id})')
+
+
 # ─── Platform registry ───────────────────────────────────────────────────────
 
 _PLATFORM_PUBLISHERS = {
     'linkedin': publish_to_linkedin,
     'facebook': publish_to_facebook,
     'instagram': publish_to_instagram,
+    'tiktok': publish_to_tiktok,
 }
 
 # Maps the social_media platform key to the integrations provider key
@@ -452,6 +614,7 @@ _PLATFORM_TO_PROVIDER = {
     'linkedin': 'linkedin',
     'facebook': 'facebook',
     'instagram': 'instagram',
+    'tiktok': 'tiktok',
 }
 
 

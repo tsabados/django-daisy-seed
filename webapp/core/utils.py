@@ -15,6 +15,13 @@ def to_project_localtime(dt, project):
     return dt.astimezone(get_project_tz(project)).strftime('%Y-%m-%dT%H:%M')
 
 
+def to_project_display(dt, project):
+    """Convert an aware datetime to the project's timezone, return as human-readable string."""
+    if not dt:
+        return ''
+    return dt.astimezone(get_project_tz(project)).strftime('%b %-d, %Y %H:%M')
+
+
 def to_project_isoformat(dt, project):
     """Convert an aware datetime to the project's timezone, return full ISO 8601 with offset."""
     if not dt:

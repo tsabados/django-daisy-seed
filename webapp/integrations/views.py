@@ -42,9 +42,8 @@ def integration_list(request):
 @login_required
 def integration_connect(request, provider):
     prov = _get_provider_or_404(provider)
-    redirect_uri = prov.get_callback_url(request)
     client = oauth.create_client(prov.key)
-    return client.authorize_redirect(request, redirect_uri)
+    return prov.get_authorize_redirect(request, client)
 
 
 @login_required

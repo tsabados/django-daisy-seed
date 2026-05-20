@@ -11,7 +11,7 @@ from credits.constants import IMAGE_GENERATION_COST, VIDEO_GENERATION_COST
 from credits.models import available_credits
 
 from brand.models import Brand
-from core.utils import ensure_aware_in_project_tz, to_project_localtime
+from core.utils import ensure_aware_in_project_tz, get_project_tz, to_project_display, to_project_localtime
 from integrations.models import IntegrationConnection
 from media_library.models import Media
 from services.ai_services import edit_text
@@ -530,22 +530,31 @@ def post_save_scheduled_at(request, pk):
 
 
 @login_required
-def post_publish_panel(request, pk):
+def post_publish_panel(request, pk=None):
     """Render the publish panel fragment (opened as Unpoly modal)."""
-    post = get_object_or_404(SocialMediaPost, pk=pk, project=request.project)
-    platforms = post.platforms.filter(is_enabled=True).order_by('platform')
     has_integrations = IntegrationConnection.objects.filter(
         project=request.project,
         provider_category=IntegrationConnection.ProviderCategory.SOCIAL_MEDIA,
         status=IntegrationConnection.ConnectionStatus.ACTIVE,
     ).exists()
 
+    if pk:
+        post = get_object_or_404(SocialMediaPost, pk=pk, project=request.project)
+        platforms = list(post.platforms.filter(is_enabled=True).order_by('platform'))
+        for pv in platforms:
+            pv.published_at_local = to_project_display(pv.published_at, request.project)
+        scheduled_at_local = to_project_localtime(post.scheduled_at, request.project)
+    else:
+        post = None
+        platforms = []
+        scheduled_at_local = ''
+
     return render(request, 'social_media/post_publish_panel.html', {
         'post': post,
         'platforms': platforms,
         'has_integrations': has_integrations,
         'project_timezone': request.project.timezone,
-        'scheduled_at_local': to_project_localtime(post.scheduled_at, request.project),
+        'scheduled_at_local': scheduled_at_local,
     })
 
 

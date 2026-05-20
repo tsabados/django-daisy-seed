@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from django.shortcuts import redirect
 from django.urls import reverse
 
 
@@ -35,6 +36,14 @@ class BaseProvider(ABC):
         """Build the absolute callback URL for this provider."""
         path = reverse('integrations:integration_callback', kwargs={'provider': self.key})
         return request.build_absolute_uri(path)
+
+    def get_authorize_redirect(self, request, oauth_client):
+        """
+        Return an HTTP redirect response to the provider's authorization page.
+        Override for providers with non-standard OAuth parameters.
+        """
+        redirect_uri = self.get_callback_url(request)
+        return oauth_client.authorize_redirect(request, redirect_uri)
 
     @abstractmethod
     def handle_callback(self, request):

@@ -7,20 +7,23 @@ PLATFORM_CHOICES = [
     ('linkedin', 'LinkedIn'),
     ('facebook', 'Facebook'),
     ('instagram', 'Instagram'),
+    ('tiktok', 'TikTok'),
 ]
 
-PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin']
+PLATFORM_ORDER = ['instagram', 'facebook', 'linkedin', 'tiktok']
 
 PLATFORM_CHAR_LIMITS = {
     'linkedin': 3000,
     'facebook': 63206,
     'instagram': 2200,
+    'tiktok': 2200,
 }
 
 PLATFORM_IMAGE_LIMITS = {
     'linkedin': 9,
     'facebook': 10,
     'instagram': 10,
+    'tiktok': 35,
 }
 
 STATUS_CHOICES = [
